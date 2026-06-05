@@ -1,5 +1,7 @@
 coverage/
 build/
+bin/
+obj/
 *.elf
 *.self
 *.vpk

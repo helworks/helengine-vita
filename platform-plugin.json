@@ -1,0 +1,6 @@
+{
+  "platformId": "psvita",
+  "displayName": "PS Vita",
+  "builderAssemblyPath": "builder/helengine.psvita.builder.dll",
+  "definitionFactoryType": "helengine.psvita.builder.PsVitaPlatformDefinitionFactory"
+}

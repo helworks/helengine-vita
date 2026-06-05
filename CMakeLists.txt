@@ -20,10 +20,40 @@ set(VITA_APP_NAME "Helengine PS Vita")
 set(VITA_TITLEID "HLEN00001")
 set(VITA_VERSION "01.00")
 
-add_executable(${PROJECT_NAME}
+set(HELENGINE_PSVITA_SOURCES
     src/main.cpp
     src/platform/psvita/PsVitaBootHost.cpp
 )
+
+if(DEFINED HELENGINE_CORE_CPP_ROOT AND NOT HELENGINE_CORE_CPP_ROOT STREQUAL "")
+    if(NOT EXISTS "${HELENGINE_CORE_CPP_ROOT}/helcpp_config.hpp")
+        message(FATAL_ERROR "HELENGINE_CORE_CPP_ROOT does not contain helcpp_config.hpp. Regenerate helengine.core C++ output first.")
+    endif()
+
+    if(EXISTS "${HELENGINE_CORE_CPP_ROOT}/helengine_core_unity.cpp")
+        set(HELENGINE_CORE_TRANSLATION_UNIT "${HELENGINE_CORE_CPP_ROOT}/helengine_core_unity.cpp")
+    elseif(EXISTS "${HELENGINE_CORE_CPP_ROOT}/helengine_core_amalgamated.cpp")
+        set(HELENGINE_CORE_TRANSLATION_UNIT "${HELENGINE_CORE_CPP_ROOT}/helengine_core_amalgamated.cpp")
+    else()
+        message(FATAL_ERROR "HELENGINE_CORE_CPP_ROOT does not contain helengine_core_unity.cpp or helengine_core_amalgamated.cpp. Regenerate helengine.core C++ output first.")
+    endif()
+
+    list(APPEND HELENGINE_PSVITA_SOURCES "${HELENGINE_CORE_TRANSLATION_UNIT}")
+
+    if(EXISTS "${HELENGINE_CORE_CPP_ROOT}/runtime/runtime_startup_manifest.cpp")
+        list(APPEND HELENGINE_PSVITA_SOURCES "${HELENGINE_CORE_CPP_ROOT}/runtime/runtime_startup_manifest.cpp")
+    endif()
+
+    if(EXISTS "${HELENGINE_CORE_CPP_ROOT}/runtime/runtime_scene_catalog_manifest.cpp")
+        list(APPEND HELENGINE_PSVITA_SOURCES "${HELENGINE_CORE_CPP_ROOT}/runtime/runtime_scene_catalog_manifest.cpp")
+    endif()
+
+    if(EXISTS "${HELENGINE_CORE_CPP_ROOT}/runtime/runtime_code_module_manifest.cpp")
+        list(APPEND HELENGINE_PSVITA_SOURCES "${HELENGINE_CORE_CPP_ROOT}/runtime/runtime_code_module_manifest.cpp")
+    endif()
+endif()
+
+add_executable(${PROJECT_NAME} ${HELENGINE_PSVITA_SOURCES})
 
 target_include_directories(${PROJECT_NAME} PRIVATE
     src

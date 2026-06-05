@@ -1,0 +1,468 @@
+using helengine;
+using helengine.baseplatform.Builders;
+using helengine.baseplatform.Definitions;
+using helengine.baseplatform.Descriptors;
+using helengine.baseplatform.Manifest;
+using helengine.baseplatform.Profiles;
+using helengine.baseplatform.Reporting;
+using helengine.baseplatform.Requests;
+using helengine.baseplatform.Results;
+
+namespace helengine.psvita.builder;
+
+/// <summary>
+/// Implements the PS Vita platform asset builder contract consumed by the editor.
+/// </summary>
+public sealed class PsVitaPlatformAssetBuilder : IPlatformAssetBuilder {
+    /// <summary>
+    /// Stable material field identifier used for the authored base color.
+    /// </summary>
+    const string BaseColorFieldId = "base-color";
+
+    /// <summary>
+    /// Stable material field identifier used for the authored diffuse texture reference.
+    /// </summary>
+    const string TextureFieldId = "texture-id";
+
+    /// <summary>
+    /// Constant-buffer name used for the authored base color payload.
+    /// </summary>
+    const string BaseColorBufferName = "BaseColorBuffer";
+
+    /// <summary>
+    /// Native build executor used to produce the PS Vita VPK.
+    /// </summary>
+    readonly IPsVitaNativeBuildExecutor NativeBuildExecutor;
+
+    /// <summary>
+    /// Initializes the PS Vita builder with the default Docker-backed native build executor.
+    /// </summary>
+    public PsVitaPlatformAssetBuilder()
+        : this(new PsVitaNativeBuildExecutor()) {
+    }
+
+    /// <summary>
+    /// Initializes the PS Vita builder with an explicit native build executor.
+    /// </summary>
+    /// <param name="nativeBuildExecutor">Native build executor used by this builder instance.</param>
+    public PsVitaPlatformAssetBuilder(IPsVitaNativeBuildExecutor nativeBuildExecutor) {
+        NativeBuildExecutor = nativeBuildExecutor ?? throw new ArgumentNullException(nameof(nativeBuildExecutor));
+        Descriptor = new PlatformBuilderDescriptor(
+            "helengine.psvita.builder",
+            "1.0.0",
+            "psvita",
+            new EngineCompatibilityRange("1.0.0", "999.0.0"),
+            new ManifestCompatibilityRange(1, 3),
+            ["psvita"],
+            ["debug"]);
+        Definition = PsVitaPlatformDefinitionFactory.Create();
+    }
+
+    /// <summary>
+    /// Gets the explicit builder descriptor for the PS Vita builder assembly.
+    /// </summary>
+    public PlatformBuilderDescriptor Descriptor { get; }
+
+    /// <summary>
+    /// Gets the typed PS Vita platform definition exposed to the editor.
+    /// </summary>
+    public PlatformDefinition Definition { get; }
+
+    /// <summary>
+    /// Returns the builder-owned cooked material payload for one PS Vita material schema request.
+    /// </summary>
+    /// <param name="request">Material translation request to validate.</param>
+    /// <returns>Cooked material payload.</returns>
+    public PlatformMaterialCookResult CookMaterial(PlatformMaterialCookRequest request) {
+        if (request == null) {
+            throw new ArgumentNullException(nameof(request));
+        }
+
+        string baseColor = request.FieldValues.TryGetValue(BaseColorFieldId, out string authoredBaseColor)
+            ? authoredBaseColor
+            : "#ffffff";
+        string diffuseTextureAssetId = request.FieldValues.TryGetValue(TextureFieldId, out string authoredTextureAssetId) && !string.IsNullOrWhiteSpace(authoredTextureAssetId)
+            ? authoredTextureAssetId
+            : string.Empty;
+
+        ShaderMaterialAsset materialAsset = new() {
+            Id = request.MaterialAssetId,
+            ShaderAssetId = string.Empty,
+            VertexProgram = string.Empty,
+            PixelProgram = string.Empty,
+            Variant = "PSVitaForward",
+            DiffuseTextureAssetId = diffuseTextureAssetId,
+            CastsShadows = false,
+            ReceivesShadows = false,
+            RenderState = new MaterialRenderState(),
+            ConstantBuffers = [
+                new MaterialConstantBufferAsset {
+                    Name = BaseColorBufferName,
+                    Data = CreateFloat4ConstantBufferData(ParseBaseColor(baseColor))
+                }
+            ]
+        };
+
+        return new PlatformMaterialCookResult(global::helengine.files.AssetSerializer.SerializeToBytes(materialAsset), []);
+    }
+
+    /// <summary>
+    /// Executes one editor-driven PS Vita build and copies the produced VPK into the output root.
+    /// </summary>
+    /// <param name="request">Resolved build request.</param>
+    /// <param name="progressReporter">Progress reporter.</param>
+    /// <param name="diagnosticReporter">Diagnostic reporter.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Final build report.</returns>
+    public Task<PlatformBuildReport> BuildAsync(
+        PlatformBuildRequest request,
+        IPlatformBuildProgressReporter progressReporter,
+        IPlatformBuildDiagnosticReporter diagnosticReporter,
+        CancellationToken cancellationToken) {
+        if (request == null) {
+            throw new ArgumentNullException(nameof(request));
+        } else if (progressReporter == null) {
+            throw new ArgumentNullException(nameof(progressReporter));
+        } else if (diagnosticReporter == null) {
+            throw new ArgumentNullException(nameof(diagnosticReporter));
+        }
+
+        ResetDirectoryIfPresent(request.OutputRoot);
+        ResetDirectoryIfPresent(request.WorkingRoot);
+        Directory.CreateDirectory(request.OutputRoot);
+        Directory.CreateDirectory(request.WorkingRoot);
+
+        List<PlatformBuildDiagnostic> diagnostics = [];
+        List<PlatformBuildItemOutcome> sceneOutcomes = [];
+        List<PlatformBuildItemOutcome> looseAssetOutcomes = [];
+        string stagedContentRootPath = Path.Combine(request.WorkingRoot, "staged-content");
+        Directory.CreateDirectory(stagedContentRootPath);
+
+        int totalItems = request.Manifest.Scenes.Length + request.Manifest.LooseAssets.Length + 1;
+        int completedItems = 0;
+
+        StageScenes(request, stagedContentRootPath, diagnostics, diagnosticReporter, progressReporter, sceneOutcomes, ref completedItems, totalItems, cancellationToken);
+        StageLooseAssets(request, stagedContentRootPath, diagnostics, diagnosticReporter, progressReporter, looseAssetOutcomes, ref completedItems, totalItems, cancellationToken);
+
+        bool nativeBuildSucceeded = false;
+        if (diagnostics.Count == 0) {
+            try {
+                progressReporter.Report(new PlatformBuildProgressUpdate(
+                    "Native Build",
+                    "helengine_psvita",
+                    completedItems,
+                    totalItems,
+                    "Running native PS Vita build."));
+
+                string nativeBuildRoot = Path.Combine(request.WorkingRoot, "native");
+                string generatedCoreRoot = ResolveGeneratedCoreRoot(request);
+                Directory.CreateDirectory(generatedCoreRoot);
+                string nativeVpkPath = NativeBuildExecutor.Build(
+                    ResolveRepositoryRoot(),
+                    nativeBuildRoot,
+                    generatedCoreRoot,
+                    stagedContentRootPath,
+                    cancellationToken);
+                string outputVpkPath = Path.Combine(request.OutputRoot, Path.GetFileName(nativeVpkPath));
+                File.Copy(nativeVpkPath, outputVpkPath, true);
+                nativeBuildSucceeded = true;
+                completedItems++;
+                progressReporter.Report(new PlatformBuildProgressUpdate(
+                    "Native Build",
+                    "helengine_psvita",
+                    completedItems,
+                    totalItems,
+                    $"Built PS Vita VPK at '{outputVpkPath}'."));
+            } catch (Exception ex) {
+                AddDiagnostic(
+                    diagnostics,
+                    diagnosticReporter,
+                    PlatformBuildDiagnosticSeverity.Error,
+                    "VITABUILD003",
+                    $"Native PS Vita build failed: {ex.Message}",
+                    string.Empty,
+                    string.Empty,
+                    request.OutputRoot);
+            }
+        }
+
+        bool succeeded = diagnostics.Count == 0
+            && sceneOutcomes.TrueForAll(outcome => outcome.OutcomeKind == PlatformBuildItemOutcomeKind.Succeeded)
+            && looseAssetOutcomes.TrueForAll(outcome => outcome.OutcomeKind == PlatformBuildItemOutcomeKind.Succeeded)
+            && nativeBuildSucceeded;
+
+        return Task.FromResult(new PlatformBuildReport(
+            succeeded,
+            [.. diagnostics],
+            [.. sceneOutcomes],
+            [.. looseAssetOutcomes]));
+    }
+
+    /// <summary>
+    /// Stages all resolved scenes into the PS Vita output and staged content roots.
+    /// </summary>
+    static void StageScenes(
+        PlatformBuildRequest request,
+        string stagedContentRootPath,
+        List<PlatformBuildDiagnostic> diagnostics,
+        IPlatformBuildDiagnosticReporter diagnosticReporter,
+        IPlatformBuildProgressReporter progressReporter,
+        List<PlatformBuildItemOutcome> sceneOutcomes,
+        ref int completedItems,
+        int totalItems,
+        CancellationToken cancellationToken) {
+        for (int sceneIndex = 0; sceneIndex < request.Manifest.Scenes.Length; sceneIndex++) {
+            cancellationToken.ThrowIfCancellationRequested();
+            PlatformBuildScene scene = request.Manifest.Scenes[sceneIndex];
+            StagePayload(scene.SceneId, scene.SourceIdentity, request.OutputRoot, stagedContentRootPath, diagnostics, diagnosticReporter, out bool copied);
+            sceneOutcomes.Add(new PlatformBuildItemOutcome(
+                scene.SceneId,
+                copied ? PlatformBuildItemOutcomeKind.Succeeded : PlatformBuildItemOutcomeKind.Failed));
+            completedItems++;
+            progressReporter.Report(new PlatformBuildProgressUpdate(
+                "Stage Payloads",
+                scene.SceneId,
+                completedItems,
+                totalItems,
+                copied ? $"Staged scene '{scene.SceneName}'." : $"Failed to stage scene '{scene.SceneName}'."));
+        }
+    }
+
+    /// <summary>
+    /// Stages all resolved loose assets into the PS Vita output and staged content roots.
+    /// </summary>
+    static void StageLooseAssets(
+        PlatformBuildRequest request,
+        string stagedContentRootPath,
+        List<PlatformBuildDiagnostic> diagnostics,
+        IPlatformBuildDiagnosticReporter diagnosticReporter,
+        IPlatformBuildProgressReporter progressReporter,
+        List<PlatformBuildItemOutcome> looseAssetOutcomes,
+        ref int completedItems,
+        int totalItems,
+        CancellationToken cancellationToken) {
+        for (int assetIndex = 0; assetIndex < request.Manifest.LooseAssets.Length; assetIndex++) {
+            cancellationToken.ThrowIfCancellationRequested();
+            PlatformBuildAsset asset = request.Manifest.LooseAssets[assetIndex];
+            StagePayload(asset.AssetId, asset.SourceIdentity, request.OutputRoot, stagedContentRootPath, diagnostics, diagnosticReporter, out bool copied);
+            looseAssetOutcomes.Add(new PlatformBuildItemOutcome(
+                asset.AssetId,
+                copied ? PlatformBuildItemOutcomeKind.Succeeded : PlatformBuildItemOutcomeKind.Failed));
+            completedItems++;
+            progressReporter.Report(new PlatformBuildProgressUpdate(
+                "Stage Payloads",
+                asset.AssetId,
+                completedItems,
+                totalItems,
+                copied ? $"Staged asset '{asset.AssetName}'." : $"Failed to stage asset '{asset.AssetName}'."));
+        }
+    }
+
+    /// <summary>
+    /// Stages one payload into both the editor output root and the native-build content root.
+    /// </summary>
+    static void StagePayload(
+        string itemId,
+        string sourceIdentity,
+        string outputRoot,
+        string stagedContentRootPath,
+        List<PlatformBuildDiagnostic> diagnostics,
+        IPlatformBuildDiagnosticReporter diagnosticReporter,
+        out bool copied) {
+        copied = false;
+        if (string.IsNullOrWhiteSpace(sourceIdentity)) {
+            AddDiagnostic(
+                diagnostics,
+                diagnosticReporter,
+                PlatformBuildDiagnosticSeverity.Error,
+                "VITABUILD001",
+                $"Item '{itemId}' is missing a source identity.",
+                string.Empty,
+                itemId,
+                itemId);
+            return;
+        }
+
+        string sourcePath = ResolveSourcePath(sourceIdentity);
+        if (!File.Exists(sourcePath)) {
+            AddDiagnostic(
+                diagnostics,
+                diagnosticReporter,
+                PlatformBuildDiagnosticSeverity.Error,
+                "VITABUILD002",
+                $"Payload source '{sourceIdentity}' was not found.",
+                string.Empty,
+                itemId,
+                sourceIdentity);
+            return;
+        }
+
+        string relativePath = ResolveCookedRelativePath(sourceIdentity);
+        CopyFile(sourcePath, Path.Combine(outputRoot, relativePath));
+        CopyFile(sourcePath, Path.Combine(stagedContentRootPath, relativePath));
+        copied = true;
+    }
+
+    /// <summary>
+    /// Adds one diagnostic to the build report and streams it to the reporter.
+    /// </summary>
+    static void AddDiagnostic(
+        List<PlatformBuildDiagnostic> diagnostics,
+        IPlatformBuildDiagnosticReporter diagnosticReporter,
+        PlatformBuildDiagnosticSeverity severity,
+        string code,
+        string message,
+        string sceneId,
+        string assetId,
+        string sourceIdentity) {
+        PlatformBuildDiagnostic diagnostic = new(severity, code, message, sceneId, assetId, sourceIdentity);
+        diagnostics.Add(diagnostic);
+        diagnosticReporter.Report(diagnostic);
+    }
+
+    /// <summary>
+    /// Copies one file and creates the destination directory if necessary.
+    /// </summary>
+    /// <param name="sourcePath">Source file path.</param>
+    /// <param name="destinationPath">Destination file path.</param>
+    static void CopyFile(string sourcePath, string destinationPath) {
+        string destinationDirectory = Path.GetDirectoryName(destinationPath);
+        if (!string.IsNullOrWhiteSpace(destinationDirectory)) {
+            Directory.CreateDirectory(destinationDirectory);
+        }
+
+        File.Copy(sourcePath, destinationPath, true);
+    }
+
+    /// <summary>
+    /// Resolves one request source identity relative to the staged project root.
+    /// </summary>
+    /// <param name="sourceIdentity">Source identity from the build manifest.</param>
+    /// <returns>Absolute source path.</returns>
+    static string ResolveSourcePath(string sourceIdentity) {
+        string normalizedSourceIdentity = sourceIdentity.Replace('\\', Path.DirectorySeparatorChar).Replace('/', Path.DirectorySeparatorChar);
+        if (Path.IsPathRooted(normalizedSourceIdentity)) {
+            return Path.GetFullPath(normalizedSourceIdentity);
+        }
+
+        return Path.GetFullPath(Path.Combine(Directory.GetCurrentDirectory(), normalizedSourceIdentity));
+    }
+
+    /// <summary>
+    /// Resolves the cooked relative path used by the editor output and staged content package.
+    /// </summary>
+    /// <param name="sourceIdentity">Source identity from the build manifest.</param>
+    /// <returns>Cooked relative output path.</returns>
+    static string ResolveCookedRelativePath(string sourceIdentity) {
+        string normalizedSourceIdentity = sourceIdentity.Replace('\\', '/').TrimStart('/');
+        if (Path.IsPathRooted(normalizedSourceIdentity)) {
+            normalizedSourceIdentity = Path.GetFileName(normalizedSourceIdentity);
+        }
+
+        const string CookedPrefix = "cooked/";
+        if (normalizedSourceIdentity.StartsWith(CookedPrefix, StringComparison.OrdinalIgnoreCase)) {
+            return normalizedSourceIdentity.Replace('/', Path.DirectorySeparatorChar);
+        }
+
+        const string GeneratedPrefix = "generated/";
+        if (normalizedSourceIdentity.StartsWith(GeneratedPrefix, StringComparison.OrdinalIgnoreCase)) {
+            normalizedSourceIdentity = normalizedSourceIdentity.Substring(GeneratedPrefix.Length);
+        }
+
+        return Path.Combine("cooked", normalizedSourceIdentity.Replace('/', Path.DirectorySeparatorChar));
+    }
+
+    /// <summary>
+    /// Resolves the PS Vita repository root from the builder assembly location or environment override.
+    /// </summary>
+    /// <returns>Absolute repository root path.</returns>
+    static string ResolveRepositoryRoot() {
+        string environmentRoot = Environment.GetEnvironmentVariable("HELENGINE_PSVITA_REPOSITORY_ROOT");
+        if (!string.IsNullOrWhiteSpace(environmentRoot)) {
+            return Path.GetFullPath(environmentRoot);
+        }
+
+        string assemblyLocation = typeof(PsVitaPlatformAssetBuilder).Assembly.Location;
+        if (string.IsNullOrWhiteSpace(assemblyLocation)) {
+            throw new InvalidOperationException("Unable to resolve the PS Vita builder assembly location.");
+        }
+
+        string baseDirectory = Path.GetDirectoryName(assemblyLocation)
+            ?? throw new InvalidOperationException($"Unable to resolve the PS Vita builder base directory from '{assemblyLocation}'.");
+        return Path.GetFullPath(Path.Combine(baseDirectory, "..", "..", "..", ".."));
+    }
+
+    /// <summary>
+    /// Resolves the generated-core root used by the native build.
+    /// </summary>
+    /// <param name="request">Resolved build request.</param>
+    /// <returns>Absolute generated-core root.</returns>
+    static string ResolveGeneratedCoreRoot(PlatformBuildRequest request) {
+        string generatedCoreRoot = string.IsNullOrWhiteSpace(request.GeneratedCoreCppRootPath)
+            ? Path.Combine(request.WorkingRoot, "generated-core")
+            : request.GeneratedCoreCppRootPath;
+        return Path.GetFullPath(generatedCoreRoot);
+    }
+
+    /// <summary>
+    /// Deletes one directory tree when it already exists.
+    /// </summary>
+    /// <param name="path">Directory path to clear.</param>
+    static void ResetDirectoryIfPresent(string path) {
+        if (!string.IsNullOrWhiteSpace(path) && Directory.Exists(path)) {
+            Directory.Delete(path, true);
+        }
+    }
+
+    /// <summary>
+    /// Parses one serialized base-color string into normalized floating-point color channels.
+    /// </summary>
+    /// <param name="serializedColor">Serialized color string in <c>#RRGGBB</c> or <c>#RRGGBBAA</c> form.</param>
+    /// <returns>Normalized color value.</returns>
+    static float4 ParseBaseColor(string serializedColor) {
+        if (string.IsNullOrWhiteSpace(serializedColor)) {
+            return new float4(1f, 1f, 1f, 1f);
+        }
+
+        string normalized = serializedColor.Trim();
+        if (normalized.StartsWith("#", StringComparison.Ordinal)) {
+            normalized = normalized.Substring(1);
+        }
+
+        if (normalized.Length != 6 && normalized.Length != 8) {
+            throw new InvalidOperationException("Base color must use #RRGGBB or #RRGGBBAA.");
+        }
+
+        try {
+            byte red = Convert.ToByte(normalized.Substring(0, 2), 16);
+            byte green = Convert.ToByte(normalized.Substring(2, 2), 16);
+            byte blue = Convert.ToByte(normalized.Substring(4, 2), 16);
+            byte alpha = normalized.Length == 8
+                ? Convert.ToByte(normalized.Substring(6, 2), 16)
+                : (byte)255;
+
+            return new float4(
+                red / 255f,
+                green / 255f,
+                blue / 255f,
+                alpha / 255f);
+        } catch (FormatException ex) {
+            throw new InvalidOperationException("Base color must use #RRGGBB or #RRGGBBAA.", ex);
+        }
+    }
+
+    /// <summary>
+    /// Packs one floating-point color into a 16-byte little-endian constant-buffer payload.
+    /// </summary>
+    /// <param name="value">Normalized color value to encode.</param>
+    /// <returns>Packed constant-buffer bytes.</returns>
+    static byte[] CreateFloat4ConstantBufferData(float4 value) {
+        using MemoryStream stream = new();
+        using EngineBinaryWriter writer = EngineBinaryWriter.Create(stream, EngineBinaryEndianness.LittleEndian);
+        writer.WriteSingle(value.X);
+        writer.WriteSingle(value.Y);
+        writer.WriteSingle(value.Z);
+        writer.WriteSingle(value.W);
+        return stream.ToArray();
+    }
+}
