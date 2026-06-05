@@ -70,4 +70,19 @@ public sealed class PsVitaGxmRenderPipelineSourceAuditTests {
         Assert.DoesNotContain("void PsVitaRenderManager2D::DrawSprite(::ISpriteDrawable2D* sprite) {\r\n    }", renderManagerSource, StringComparison.Ordinal);
         Assert.DoesNotContain("void PsVitaRenderManager2D::DrawSprite(::ISpriteDrawable2D* sprite) {\n    }", renderManagerSource, StringComparison.Ordinal);
     }
+
+    /// <summary>
+    /// Verifies the PS Vita 2D renderer emits text glyph quads from the font atlas instead of leaving text rendering as an empty body.
+    /// </summary>
+    [Fact]
+    public void Source_whenQueueingTextGlyphs_usesFontAtlasLayoutAndQueuedQuads() {
+        string renderManagerSourcePath = PsVitaRepositoryPathResolver.ResolvePath("src", "platform", "psvita", "rendering", "PsVitaRenderManager2D.cpp");
+        string renderManagerSource = File.ReadAllText(renderManagerSourcePath);
+
+        Assert.Contains("FontAsset", renderManagerSource, StringComparison.Ordinal);
+        Assert.Contains("TextLayoutUtils::WrapText", renderManagerSource, StringComparison.Ordinal);
+        Assert.Contains("rendering::PsVitaQueuedQuad", renderManagerSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("void PsVitaRenderManager2D::DrawText(::ITextDrawable2D* text) {\r\n    }", renderManagerSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("void PsVitaRenderManager2D::DrawText(::ITextDrawable2D* text) {\n    }", renderManagerSource, StringComparison.Ordinal);
+    }
 }
