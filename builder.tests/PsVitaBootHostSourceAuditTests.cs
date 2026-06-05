@@ -20,16 +20,23 @@ public sealed class PsVitaBootHostSourceAuditTests {
         Assert.Contains("void InitializeCore();", headerSource, StringComparison.Ordinal);
         Assert.Contains("void LoadStartupScene();", headerSource, StringComparison.Ordinal);
         Assert.Contains("void RunMainLoop();", headerSource, StringComparison.Ordinal);
+        Assert.Contains("PsVitaGxmRenderer", headerSource, StringComparison.Ordinal);
         Assert.Contains("#if HELENGINE_PSVITA_HAS_GENERATED_CORE", sourceCode, StringComparison.Ordinal);
         Assert.Contains("#include \"Core.hpp\"", sourceCode, StringComparison.Ordinal);
+        Assert.Contains("#include \"platform/psvita/rendering/PsVitaGxmRenderer.hpp\"", sourceCode, StringComparison.Ordinal);
         Assert.Contains("#include \"runtime/runtime_scene_catalog_manifest.hpp\"", sourceCode, StringComparison.Ordinal);
         Assert.Contains("#include \"runtime/runtime_startup_manifest.hpp\"", sourceCode, StringComparison.Ordinal);
         Assert.Contains("InitializeCore();", sourceCode, StringComparison.Ordinal);
         Assert.Contains("LoadStartupScene();", sourceCode, StringComparison.Ordinal);
         Assert.Contains("RunMainLoop();", sourceCode, StringComparison.Ordinal);
+        Assert.Contains("GxmRenderer = new rendering::PsVitaGxmRenderer();", sourceCode, StringComparison.Ordinal);
+        Assert.Contains("static_cast<PsVitaRenderManager2D*>(EngineRenderManager2D)->SetGxmRenderer(GxmRenderer);", sourceCode, StringComparison.Ordinal);
         Assert.Contains("EnginePlatformInfo = new PlatformInfo(\"psvita\", \"1\");", sourceCode, StringComparison.Ordinal);
         Assert.Contains("he_get_runtime_startup_scene_relative_path()", sourceCode, StringComparison.Ordinal);
         Assert.Contains("he_runtime_scene_catalog_entries(&runtimeSceneCount)", sourceCode, StringComparison.Ordinal);
         Assert.Contains("EngineCore->get_SceneManager()->LoadScene(startupSceneId, SceneLoadMode::Single);", sourceCode, StringComparison.Ordinal);
+        Assert.Contains("GxmRenderer->BeginFrame(CornflowerBlue);", sourceCode, StringComparison.Ordinal);
+        Assert.Contains("EngineRenderManager2D->Draw();", sourceCode, StringComparison.Ordinal);
+        Assert.Contains("GxmRenderer->PresentFrame();", sourceCode, StringComparison.Ordinal);
     }
 }

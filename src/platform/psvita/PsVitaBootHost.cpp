@@ -50,6 +50,7 @@ namespace helengine::psvita {
         , EngineRenderManager2D(nullptr)
         , EngineInputBackend(nullptr)
         , EnginePlatformInfo(nullptr)
+        , GxmRenderer(nullptr)
 #endif
     {
     }
@@ -90,6 +91,13 @@ namespace helengine::psvita {
         FrameBuffer.width = ScreenWidth;
         FrameBuffer.height = ScreenHeight;
 
+#if HELENGINE_PSVITA_HAS_GENERATED_CORE
+        GxmRenderer = new rendering::PsVitaGxmRenderer();
+        if (!GxmRenderer->Initialize()) {
+            return false;
+        }
+#endif
+
         return true;
     }
 
@@ -110,6 +118,7 @@ namespace helengine::psvita {
 
         EngineRenderManager3D = new PsVitaRenderManager3D();
         EngineRenderManager2D = new PsVitaRenderManager2D();
+        static_cast<PsVitaRenderManager2D*>(EngineRenderManager2D)->SetGxmRenderer(GxmRenderer);
         EngineInputBackend = new PsVitaInputBackend();
         EnginePlatformInfo = new PlatformInfo("psvita", "1");
         EngineRenderManager3D->AddWindow(0, ScreenWidth, ScreenHeight);
@@ -155,8 +164,9 @@ namespace helengine::psvita {
     void PsVitaBootHost::RunMainLoop() {
         while (true) {
             EngineCore->Update(FrameDeltaSeconds);
-            ClearFrameBuffer();
+            GxmRenderer->BeginFrame(CornflowerBlue);
             EngineCore->Draw();
+            EngineRenderManager2D->Draw();
             PresentFrame();
         }
     }
@@ -171,6 +181,13 @@ namespace helengine::psvita {
 
     /// Presents the configured frame buffer to the display on the next vertical blank.
     void PsVitaBootHost::PresentFrame() {
+#if HELENGINE_PSVITA_HAS_GENERATED_CORE
+        if (GxmRenderer != nullptr) {
+            GxmRenderer->PresentFrame();
+            return;
+        }
+#endif
+
         sceDisplayWaitVblankStart();
         sceDisplaySetFrameBuf(&FrameBuffer, SCE_DISPLAY_SETBUF_NEXTFRAME);
     }
