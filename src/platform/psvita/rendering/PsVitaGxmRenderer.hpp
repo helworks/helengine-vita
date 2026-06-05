@@ -1,0 +1,51 @@
+#pragma once
+
+#if HELENGINE_PSVITA_HAS_GENERATED_CORE
+
+#include <cstddef>
+#include <cstdint>
+#include <vector>
+
+#include "platform/psvita/rendering/PsVitaQueuedQuad.hpp"
+
+namespace helengine::psvita::rendering {
+    /// Owns the native PS Vita GXM frame lifecycle that will submit textured sprite and text quads.
+    class PsVitaGxmRenderer final {
+    public:
+        /// Creates one uninitialized PS Vita GXM renderer foundation.
+        PsVitaGxmRenderer();
+
+        /// Initializes the native renderer state needed before the first submitted 2D frame.
+        bool Initialize();
+
+        /// Shuts down the native renderer state and releases any owned frame resources.
+        void Shutdown();
+
+        /// Gets whether the renderer has completed its initialization path.
+        bool IsInitialized() const;
+
+        /// Begins one new frame and records the requested clear color for later native submission.
+        void BeginFrame(std::uint32_t clearColorAbgr);
+
+        /// Records one batch of textured quads for later native submission.
+        void SubmitQuads(const std::vector<PsVitaQueuedQuad>& queuedQuads);
+
+        /// Presents the current frame through the PS Vita display path.
+        void PresentFrame();
+
+        /// Gets the number of quads most recently recorded for the current frame.
+        std::size_t GetSubmittedQuadCount() const;
+
+    private:
+        /// Stores whether the renderer completed its initialization path.
+        bool Initialized;
+
+        /// Stores the clear color requested for the current frame.
+        std::uint32_t ActiveClearColorAbgr;
+
+        /// Stores the number of submitted quads for the current frame.
+        std::size_t SubmittedQuadCount;
+    };
+}
+
+#endif

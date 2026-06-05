@@ -12,13 +12,14 @@ project(helengine_psvita LANGUAGES C CXX)
 
 include("${VITASDK}/share/vita.cmake" REQUIRED)
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS ON)
 
 set(VITA_APP_NAME "Helengine PS Vita")
 set(VITA_TITLEID "HLEN00001")
 set(VITA_VERSION "01.00")
+set(HELENGINE_PSVITA_VPK_FILE_ARGS)
 
 set(HELENGINE_PSVITA_SOURCES
     src/main.cpp
@@ -51,6 +52,29 @@ if(DEFINED HELENGINE_CORE_CPP_ROOT AND NOT HELENGINE_CORE_CPP_ROOT STREQUAL "")
     if(EXISTS "${HELENGINE_CORE_CPP_ROOT}/runtime/runtime_code_module_manifest.cpp")
         list(APPEND HELENGINE_PSVITA_SOURCES "${HELENGINE_CORE_CPP_ROOT}/runtime/runtime_code_module_manifest.cpp")
     endif()
+
+    list(APPEND HELENGINE_PSVITA_SOURCES
+        src/platform/psvita/PsVitaInputBackend.cpp
+        src/platform/psvita/PsVitaRuntimeSceneCatalogFactory.cpp
+        src/platform/psvita/rendering/PsVitaGpuTexture.cpp
+        src/platform/psvita/rendering/PsVitaGxmRenderer.cpp
+        src/platform/psvita/rendering/PsVitaRenderManager2D.cpp
+        src/platform/psvita/rendering/PsVitaRenderManager3D.cpp
+        src/platform/psvita/rendering/PsVitaRuntimeTexture.cpp
+        src/platform/psvita/rendering/PsVitaTextureCache.cpp
+    )
+endif()
+
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/cooked")
+    file(GLOB_RECURSE HELENGINE_PSVITA_COOKED_FILES
+        RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/cooked/*")
+
+    foreach(cooked_file IN LISTS HELENGINE_PSVITA_COOKED_FILES)
+        if(NOT IS_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/${cooked_file}")
+            list(APPEND HELENGINE_PSVITA_VPK_FILE_ARGS FILE "${CMAKE_CURRENT_SOURCE_DIR}/${cooked_file}" "${cooked_file}")
+        endif()
+    endforeach()
 endif()
 
 add_executable(${PROJECT_NAME} ${HELENGINE_PSVITA_SOURCES})
@@ -68,11 +92,14 @@ endif()
 
 target_link_libraries(${PROJECT_NAME} PRIVATE
     SceDisplay_stub
+    SceGxm_stub
     SceLibKernel_stub
+    SceSysmodule_stub
 )
 
 vita_create_self(${PROJECT_NAME}.self ${PROJECT_NAME})
 vita_create_vpk(${PROJECT_NAME}.vpk ${VITA_TITLEID} ${PROJECT_NAME}.self
     VERSION ${VITA_VERSION}
     NAME ${VITA_APP_NAME}
+    ${HELENGINE_PSVITA_VPK_FILE_ARGS}
 )
