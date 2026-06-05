@@ -51,4 +51,23 @@ public sealed class PsVitaGxmRenderPipelineSourceAuditTests {
         Assert.Contains("void SetGpuTexture(std::unique_ptr<PsVitaGpuTexture>&& gpuTexture);", runtimeTextureHeaderSource, StringComparison.Ordinal);
         Assert.Contains("PsVitaGpuTexture", gxmRendererSource, StringComparison.Ordinal);
     }
+
+    /// <summary>
+    /// Verifies the PS Vita 2D renderer stores queued sprite quads and flushes them through the native GXM renderer.
+    /// </summary>
+    [Fact]
+    public void Source_whenQueueingSpriteQuads_usesTheQueuedQuadPathAndFlushesThroughGxm() {
+        string renderManagerHeaderPath = PsVitaRepositoryPathResolver.ResolvePath("src", "platform", "psvita", "rendering", "PsVitaRenderManager2D.hpp");
+        string renderManagerSourcePath = PsVitaRepositoryPathResolver.ResolvePath("src", "platform", "psvita", "rendering", "PsVitaRenderManager2D.cpp");
+
+        string renderManagerHeaderSource = File.ReadAllText(renderManagerHeaderPath);
+        string renderManagerSource = File.ReadAllText(renderManagerSourcePath);
+
+        Assert.Contains("void SetGxmRenderer(rendering::PsVitaGxmRenderer* gxmRenderer);", renderManagerHeaderSource, StringComparison.Ordinal);
+        Assert.Contains("std::vector<rendering::PsVitaQueuedQuad> QueuedQuads;", renderManagerHeaderSource, StringComparison.Ordinal);
+        Assert.Contains("rendering::PsVitaQueuedQuad", renderManagerSource, StringComparison.Ordinal);
+        Assert.Contains("SubmitQuads", renderManagerSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("void PsVitaRenderManager2D::DrawSprite(::ISpriteDrawable2D* sprite) {\r\n    }", renderManagerSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("void PsVitaRenderManager2D::DrawSprite(::ISpriteDrawable2D* sprite) {\n    }", renderManagerSource, StringComparison.Ordinal);
+    }
 }

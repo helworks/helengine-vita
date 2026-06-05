@@ -2,6 +2,10 @@
 
 #if HELENGINE_PSVITA_HAS_GENERATED_CORE
 
+#include <vector>
+
+#include "platform/psvita/rendering/PsVitaGxmRenderer.hpp"
+#include "platform/psvita/rendering/PsVitaQueuedQuad.hpp"
 #include "platform/psvita/rendering/PsVitaTextureCache.hpp"
 #include "RenderManager2D.hpp"
 
@@ -11,6 +15,9 @@ namespace helengine::psvita {
     public:
         /// Builds a runtime texture from raw data.
         ::RuntimeTexture* BuildTextureFromRaw(::TextureAsset* data) override;
+
+        /// Assigns the native PS Vita GXM renderer that will receive flushed quad batches.
+        void SetGxmRenderer(rendering::PsVitaGxmRenderer* gxmRenderer);
 
         /// Flushes one frame of queued PS Vita 2D commands through the native renderer foundation.
         void Draw() override;
@@ -34,6 +41,12 @@ namespace helengine::psvita {
         void DrawText(::ITextDrawable2D* text) override;
 
     private:
+        /// Stores the native PS Vita GXM renderer that receives queued sprite batches.
+        rendering::PsVitaGxmRenderer* GxmRenderer = nullptr;
+
+        /// Stores the queued sprite quads built during the current frame.
+        std::vector<rendering::PsVitaQueuedQuad> QueuedQuads;
+
         /// Stores the runtime texture cache used by the temporary PS Vita 2D renderer.
         rendering::PsVitaTextureCache TextureCache;
     };
