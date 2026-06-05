@@ -28,7 +28,7 @@ public sealed class PsVitaPlatformPluginManifestTests {
     /// </summary>
     [Fact]
     public void CheckedInPluginManifest_matchesGeneratedPayload() {
-        string manifestFilePath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "platform-plugin.json"));
+        string manifestFilePath = PsVitaRepositoryPathResolver.ResolvePath("platform-plugin.json");
         string expectedJson = PsVitaPlatformPluginManifest.Create().ToJsonString();
         string actualJson = JsonNode.Parse(File.ReadAllText(manifestFilePath))?.ToJsonString();
 

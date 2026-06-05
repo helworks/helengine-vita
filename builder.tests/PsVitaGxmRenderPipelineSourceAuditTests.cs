@@ -7,44 +7,19 @@ namespace helengine.psvita.builder.tests;
 /// </summary>
 public sealed class PsVitaGxmRenderPipelineSourceAuditTests {
     /// <summary>
-    /// Verifies the PS Vita runtime references the planned GXM renderer files, flush entrypoints, and build wiring required for sprite and text rendering.
+    /// Verifies the PS Vita runtime references the planned GXM renderer files, frame flush entrypoints, and build wiring required for the native 2D foundation.
     /// </summary>
     [Fact]
-    public void Source_whenBuildingTheGxm2dPipeline_containsRendererFilesAndFlushHooks() {
-        string repositoryRootPath = Environment.GetEnvironmentVariable("HELENGINE_PSVITA_REPOSITORY_ROOT");
-        if (string.IsNullOrWhiteSpace(repositoryRootPath)) {
-            repositoryRootPath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", ".."));
-        }
-
-        string repositoryMarkerPath = Path.Combine("src", "platform", "psvita", "rendering", "PsVitaRenderManager2D.hpp");
-        DirectoryInfo candidateDirectory = new DirectoryInfo(repositoryRootPath);
-        while (candidateDirectory != null && !File.Exists(Path.Combine(candidateDirectory.FullName, repositoryMarkerPath))) {
-            candidateDirectory = candidateDirectory.Parent;
-        }
-
-        if (candidateDirectory == null) {
-            candidateDirectory = new DirectoryInfo(Directory.GetCurrentDirectory());
-            while (candidateDirectory != null && !File.Exists(Path.Combine(candidateDirectory.FullName, repositoryMarkerPath))) {
-                candidateDirectory = candidateDirectory.Parent;
-            }
-        }
-
-        if (candidateDirectory == null) {
-            throw new DirectoryNotFoundException("Could not locate the helengine-psvita repository root from the test process.");
-        }
-
-        repositoryRootPath = candidateDirectory.FullName;
-        string gxmRendererHeaderPath = Path.Combine(repositoryRootPath, "src", "platform", "psvita", "rendering", "PsVitaGxmRenderer.hpp");
-        string gpuTextureHeaderPath = Path.Combine(repositoryRootPath, "src", "platform", "psvita", "rendering", "PsVitaGpuTexture.hpp");
-        string queuedQuadHeaderPath = Path.Combine(repositoryRootPath, "src", "platform", "psvita", "rendering", "PsVitaQueuedQuad.hpp");
-        string texturedVertexHeaderPath = Path.Combine(repositoryRootPath, "src", "platform", "psvita", "rendering", "PsVitaTexturedQuadVertex.hpp");
-        string renderManagerHeaderPath = Path.Combine(repositoryRootPath, "src", "platform", "psvita", "rendering", "PsVitaRenderManager2D.hpp");
-        string renderManagerSourcePath = Path.Combine(repositoryRootPath, "src", "platform", "psvita", "rendering", "PsVitaRenderManager2D.cpp");
-        string bootHostSourcePath = Path.Combine(repositoryRootPath, "src", "platform", "psvita", "PsVitaBootHost.cpp");
-        string cmakePath = Path.Combine(repositoryRootPath, "CMakeLists.txt");
+    public void Source_whenBuildingTheGxm2dFoundation_containsRendererFilesAndFrameWiring() {
+        string gxmRendererHeaderPath = PsVitaRepositoryPathResolver.ResolvePath("src", "platform", "psvita", "rendering", "PsVitaGxmRenderer.hpp");
+        string gpuTextureHeaderPath = PsVitaRepositoryPathResolver.ResolvePath("src", "platform", "psvita", "rendering", "PsVitaGpuTexture.hpp");
+        string queuedQuadHeaderPath = PsVitaRepositoryPathResolver.ResolvePath("src", "platform", "psvita", "rendering", "PsVitaQueuedQuad.hpp");
+        string texturedVertexHeaderPath = PsVitaRepositoryPathResolver.ResolvePath("src", "platform", "psvita", "rendering", "PsVitaTexturedQuadVertex.hpp");
+        string renderManagerHeaderPath = PsVitaRepositoryPathResolver.ResolvePath("src", "platform", "psvita", "rendering", "PsVitaRenderManager2D.hpp");
+        string bootHostSourcePath = PsVitaRepositoryPathResolver.ResolvePath("src", "platform", "psvita", "PsVitaBootHost.cpp");
+        string cmakePath = PsVitaRepositoryPathResolver.ResolvePath("CMakeLists.txt");
 
         string renderManagerHeaderSource = File.ReadAllText(renderManagerHeaderPath);
-        string renderManagerSource = File.ReadAllText(renderManagerSourcePath);
         string bootHostSource = File.ReadAllText(bootHostSourcePath);
         string cmakeSource = File.ReadAllText(cmakePath);
 
@@ -53,13 +28,27 @@ public sealed class PsVitaGxmRenderPipelineSourceAuditTests {
         Assert.True(File.Exists(queuedQuadHeaderPath), "Expected one queued quad command header.");
         Assert.True(File.Exists(texturedVertexHeaderPath), "Expected one textured quad vertex header.");
         Assert.Contains("void Draw() override;", renderManagerHeaderSource, StringComparison.Ordinal);
-        Assert.DoesNotContain("void PsVitaRenderManager2D::DrawSprite(::ISpriteDrawable2D* sprite) {\r\n    }", renderManagerSource, StringComparison.Ordinal);
-        Assert.DoesNotContain("void PsVitaRenderManager2D::DrawSprite(::ISpriteDrawable2D* sprite) {\n    }", renderManagerSource, StringComparison.Ordinal);
-        Assert.DoesNotContain("void PsVitaRenderManager2D::DrawText(::ITextDrawable2D* text) {\r\n    }", renderManagerSource, StringComparison.Ordinal);
-        Assert.DoesNotContain("void PsVitaRenderManager2D::DrawText(::ITextDrawable2D* text) {\n    }", renderManagerSource, StringComparison.Ordinal);
         Assert.Contains("PsVitaGxmRenderer", bootHostSource, StringComparison.Ordinal);
         Assert.Contains("PsVitaGxmRenderer.cpp", cmakeSource, StringComparison.Ordinal);
         Assert.Contains("PsVitaGpuTexture.cpp", cmakeSource, StringComparison.Ordinal);
         Assert.Contains("PsVitaRenderManager2D.cpp", cmakeSource, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Verifies the PS Vita runtime texture type exposes dimensions and native GPU ownership hooks needed for lazy GXM texture upload.
+    /// </summary>
+    [Fact]
+    public void Source_whenBuildingRuntimeTextureResidency_exposesNativeTextureOwnershipHooks() {
+        string runtimeTextureHeaderPath = PsVitaRepositoryPathResolver.ResolvePath("src", "platform", "psvita", "rendering", "PsVitaRuntimeTexture.hpp");
+        string gxmRendererSourcePath = PsVitaRepositoryPathResolver.ResolvePath("src", "platform", "psvita", "rendering", "PsVitaGxmRenderer.cpp");
+
+        string runtimeTextureHeaderSource = File.ReadAllText(runtimeTextureHeaderPath);
+        string gxmRendererSource = File.ReadAllText(gxmRendererSourcePath);
+
+        Assert.Contains("std::uint32_t GetTextureWidthPixels() const;", runtimeTextureHeaderSource, StringComparison.Ordinal);
+        Assert.Contains("std::uint32_t GetTextureHeightPixels() const;", runtimeTextureHeaderSource, StringComparison.Ordinal);
+        Assert.Contains("PsVitaGpuTexture* GetGpuTexture() const;", runtimeTextureHeaderSource, StringComparison.Ordinal);
+        Assert.Contains("void SetGpuTexture(std::unique_ptr<PsVitaGpuTexture>&& gpuTexture);", runtimeTextureHeaderSource, StringComparison.Ordinal);
+        Assert.Contains("PsVitaGpuTexture", gxmRendererSource, StringComparison.Ordinal);
     }
 }

@@ -1,6 +1,9 @@
 #include "platform/psvita/rendering/PsVitaGxmRenderer.hpp"
 
+#include <memory>
+
 #include "platform/psvita/rendering/PsVitaGpuTexture.hpp"
+#include "platform/psvita/rendering/PsVitaRuntimeTexture.hpp"
 
 #if HELENGINE_PSVITA_HAS_GENERATED_CORE
 
@@ -39,8 +42,13 @@ namespace helengine::psvita::rendering {
 
     /// Records one batch of textured quads for later native submission.
     void PsVitaGxmRenderer::SubmitQuads(const std::vector<PsVitaQueuedQuad>& queuedQuads) {
-        PsVitaGpuTexture* uploadedTexture = nullptr;
-        (void)uploadedTexture;
+        for (const PsVitaQueuedQuad& queuedQuad : queuedQuads) {
+            if (queuedQuad.Texture != nullptr && !queuedQuad.Texture->HasGpuTexture()) {
+                std::unique_ptr<PsVitaGpuTexture> uploadedTexture = std::make_unique<PsVitaGpuTexture>();
+                queuedQuad.Texture->SetGpuTexture(std::move(uploadedTexture));
+            }
+        }
+
         SubmittedQuadCount = queuedQuads.size();
     }
 
