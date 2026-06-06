@@ -2,32 +2,118 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <stdexcept>
 #include <string>
 
+#include "Asset.hpp"
+#include "AssetSerializer.hpp"
 #include "Entity.hpp"
 #include "FontChar.hpp"
 #include "FontAsset.hpp"
 #include "FontInfo.hpp"
+#include "ICamera.hpp"
+#include "IDrawable2D.hpp"
+#include "IRenderQueue2D.hpp"
+#include "ISpriteDrawable2D.hpp"
+#include "ITextDrawable2D.hpp"
 #include "TextAlignment.hpp"
 #include "TextLayoutUtils.hpp"
 #include "byte4.hpp"
 #include "float3.hpp"
 #include "float4.hpp"
 #include "int2.hpp"
+#include "runtime/native_cast.hpp"
+#include "runtime/native_exceptions.hpp"
+#include "system/io/file.hpp"
 #include "platform/psvita/rendering/PsVitaRuntimeTexture.hpp"
+#include "TextureAsset.hpp"
 
 #if HELENGINE_PSVITA_HAS_GENERATED_CORE
 
 namespace helengine::psvita {
+    namespace {
+        constexpr const char* BootTracePath = "ux0:/data/helengine_psvita_boot.log";
+
+        void AppendRenderTrace(const char* message) {
+            if (message == nullptr) {
+                return;
+            }
+
+            std::FILE* file = std::fopen(BootTracePath, "a");
+            if (file == nullptr) {
+                return;
+            }
+
+            std::fputs(message, file);
+            std::fputc('\n', file);
+            std::fclose(file);
+        }
+    }
+
+    /// Builds a runtime texture from one packaged cooked texture asset.
+    ::RuntimeTexture* PsVitaRenderManager2D::BuildTextureFromCooked(std::string cookedAssetPath) {
+        AppendRenderTrace("RenderManager2D::BuildTextureFromCooked begin");
+        if (cookedAssetPath.empty()) {
+            throw new ArgumentException("Cooked texture asset path must be provided.", "cookedAssetPath");
+        }
+
+        ::FileStream* stream = nullptr;
+        ::Asset* asset = nullptr;
+        try {
+            stream = ::File::OpenRead(cookedAssetPath);
+            AppendRenderTrace("RenderManager2D::BuildTextureFromCooked opened");
+            asset = ::AssetSerializer::Deserialize(stream);
+            AppendRenderTrace("RenderManager2D::BuildTextureFromCooked deserialized");
+            delete stream;
+            stream = nullptr;
+
+            ::TextureAsset* cookedTextureAsset = he_cpp_try_cast<TextureAsset>(asset);
+            if (cookedTextureAsset == nullptr) {
+                throw new InvalidOperationException("PS Vita cooked texture payloads must deserialize as TextureAsset.");
+            }
+
+            AppendRenderTrace("RenderManager2D::BuildTextureFromCooked typed");
+            ::RuntimeTexture* runtimeTexture = BuildTextureFromRaw(cookedTextureAsset);
+            delete cookedTextureAsset;
+            asset = nullptr;
+            AppendRenderTrace("RenderManager2D::BuildTextureFromCooked complete");
+            return runtimeTexture;
+        } catch (...) {
+            if (stream != nullptr) {
+                delete stream;
+            }
+            if (asset != nullptr) {
+                delete asset;
+            }
+
+            throw;
+        }
+    }
+
     /// Builds a runtime texture from raw data.
     ::RuntimeTexture* PsVitaRenderManager2D::BuildTextureFromRaw(::TextureAsset* data) {
+        AppendRenderTrace("RenderManager2D::BuildTextureFromRaw begin");
         return TextureCache.BuildTextureFromRaw(data);
     }
 
     /// Assigns the native PS Vita GXM renderer that will receive flushed quad batches.
     void PsVitaRenderManager2D::SetGxmRenderer(rendering::PsVitaGxmRenderer* gxmRenderer) {
         GxmRenderer = gxmRenderer;
+    }
+
+    /// Draws one camera's ordered 2D queue into the queued-quad submission path.
+    void PsVitaRenderManager2D::DrawCamera(::ICamera* camera) {
+        if (camera == nullptr) {
+            throw new ArgumentNullException("camera");
+        }
+
+        ::IRenderQueue2D* renderQueue = camera->get_RenderQueue2D();
+        if (renderQueue == nullptr) {
+            return;
+        }
+
+        renderQueue->VisitOrdered(this);
     }
 
     /// Flushes one frame of queued PS Vita 2D commands through the native renderer foundation.
@@ -322,6 +408,20 @@ namespace helengine::psvita {
                 offsetX += advanceWidth;
             }
         }
+    }
+
+    /// Visits one ordered drawable and forwards it through its generated-core draw entry point.
+    void PsVitaRenderManager2D::Visit(::IDrawable2D* drawable) {
+        if (drawable == nullptr) {
+            return;
+        }
+
+        ::Entity* parent = drawable->get_Parent();
+        if (parent == nullptr || !parent->get_Enabled()) {
+            return;
+        }
+
+        drawable->Draw();
     }
 }
 

@@ -28,4 +28,27 @@ public sealed class PsVitaRenderManager2DSourceAuditTests {
         Assert.Contains("ReleaseTexture", sourceCode, StringComparison.Ordinal);
         Assert.Contains("ReleaseFont", sourceCode, StringComparison.Ordinal);
     }
+
+    /// <summary>
+    /// Verifies the PS Vita 2D renderer can rebuild one cooked texture payload by deserializing the packaged texture asset and forwarding it through the raw Vita texture path.
+    /// </summary>
+    [Fact]
+    public void Source_whenResolvingCookedPlatformOwnedTexture_reusesRawTextureBuilderPath() {
+        string headerPath = PsVitaRepositoryPathResolver.ResolvePath("src", "platform", "psvita", "rendering", "PsVitaRenderManager2D.hpp");
+        string sourcePath = PsVitaRepositoryPathResolver.ResolvePath("src", "platform", "psvita", "rendering", "PsVitaRenderManager2D.cpp");
+        string headerSource = File.ReadAllText(headerPath);
+        string sourceCode = File.ReadAllText(sourcePath);
+
+        Assert.Contains("::RuntimeTexture* BuildTextureFromCooked(std::string cookedAssetPath) override;", headerSource, StringComparison.Ordinal);
+        Assert.Contains("#include \"AssetSerializer.hpp\"", sourceCode, StringComparison.Ordinal);
+        Assert.Contains("#include \"Asset.hpp\"", sourceCode, StringComparison.Ordinal);
+        Assert.Contains("#include \"runtime/native_cast.hpp\"", sourceCode, StringComparison.Ordinal);
+        Assert.Contains("#include \"system/io/file.hpp\"", sourceCode, StringComparison.Ordinal);
+        Assert.Contains("::FileStream* stream = nullptr;", sourceCode, StringComparison.Ordinal);
+        Assert.Contains("::Asset* asset = nullptr;", sourceCode, StringComparison.Ordinal);
+        Assert.Contains("stream = ::File::OpenRead(cookedAssetPath);", sourceCode, StringComparison.Ordinal);
+        Assert.Contains("asset = ::AssetSerializer::Deserialize(stream);", sourceCode, StringComparison.Ordinal);
+        Assert.Contains("::TextureAsset* cookedTextureAsset = he_cpp_try_cast<TextureAsset>(asset);", sourceCode, StringComparison.Ordinal);
+        Assert.Contains("::RuntimeTexture* runtimeTexture = BuildTextureFromRaw(cookedTextureAsset);", sourceCode, StringComparison.Ordinal);
+    }
 }

@@ -25,12 +25,12 @@ namespace helengine::psvita::rendering {
 
     /// Gets the authored texture width in pixels carried by this runtime texture.
     std::uint32_t PsVitaRuntimeTexture::GetTextureWidthPixels() const {
-        return static_cast<std::uint32_t>(get_Width());
+        return static_cast<std::uint32_t>(const_cast<PsVitaRuntimeTexture*>(this)->get_Width());
     }
 
     /// Gets the authored texture height in pixels carried by this runtime texture.
     std::uint32_t PsVitaRuntimeTexture::GetTextureHeightPixels() const {
-        return static_cast<std::uint32_t>(get_Height());
+        return static_cast<std::uint32_t>(const_cast<PsVitaRuntimeTexture*>(this)->get_Height());
     }
 
     /// Replaces the owned ABGR8888 pixel buffer.

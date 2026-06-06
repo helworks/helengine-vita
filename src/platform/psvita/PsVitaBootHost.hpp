@@ -9,6 +9,7 @@ class RenderManager3D;
 class RenderManager2D;
 class IInputBackend;
 class PlatformInfo;
+class IRuntimeDiagnosticsProvider;
 namespace helengine::psvita::rendering {
     class PsVitaGxmRenderer;
 }
@@ -25,6 +26,12 @@ namespace helengine::psvita {
         int Run();
 
     private:
+        /// Clears the persisted Vita boot trace file before one new startup attempt.
+        void ResetBootTrace();
+
+        /// Appends one line to the persisted Vita boot trace file.
+        void AppendBootTrace(const char* message);
+
         /// Initializes the display buffer configuration required for the first native frame presentation.
         bool InitializeGraphics();
 
@@ -69,6 +76,9 @@ namespace helengine::psvita {
 
         /// Stores the runtime platform descriptor required by generated-core startup.
         ::PlatformInfo* EnginePlatformInfo;
+
+        /// Stores the runtime diagnostics provider that streams generated-core scene/load stages into the Vita boot trace.
+        ::IRuntimeDiagnosticsProvider* EngineRuntimeDiagnosticsProvider;
 
         /// Stores the native PS Vita GXM renderer that owns generated-core frame submission and presentation.
         rendering::PsVitaGxmRenderer* GxmRenderer;

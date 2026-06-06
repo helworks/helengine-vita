@@ -35,10 +35,15 @@ public sealed class PsVitaPlatformAssetBuilder : IPlatformAssetBuilder {
     readonly IPsVitaNativeBuildExecutor NativeBuildExecutor;
 
     /// <summary>
+    /// Writer that backfills generated runtime component deserializer support when the editor build graph does not emit it for the Vita workspace.
+    /// </summary>
+    readonly PsVitaGeneratedRuntimeComponentSupportWriter GeneratedRuntimeComponentSupportWriter;
+
+    /// <summary>
     /// Initializes the PS Vita builder with the default Docker-backed native build executor.
     /// </summary>
     public PsVitaPlatformAssetBuilder()
-        : this(new PsVitaNativeBuildExecutor()) {
+        : this(new PsVitaNativeBuildExecutor(), new PsVitaGeneratedRuntimeComponentSupportWriter()) {
     }
 
     /// <summary>
@@ -47,6 +52,28 @@ public sealed class PsVitaPlatformAssetBuilder : IPlatformAssetBuilder {
     /// <param name="nativeBuildExecutor">Native build executor used by this builder instance.</param>
     public PsVitaPlatformAssetBuilder(IPsVitaNativeBuildExecutor nativeBuildExecutor) {
         NativeBuildExecutor = nativeBuildExecutor ?? throw new ArgumentNullException(nameof(nativeBuildExecutor));
+        GeneratedRuntimeComponentSupportWriter = new PsVitaGeneratedRuntimeComponentSupportWriter();
+        Descriptor = new PlatformBuilderDescriptor(
+            "helengine.psvita.builder",
+            "1.0.0",
+            "psvita",
+            new EngineCompatibilityRange("1.0.0", "999.0.0"),
+            new ManifestCompatibilityRange(1, 3),
+            ["psvita"],
+            ["debug"]);
+        Definition = PsVitaPlatformDefinitionFactory.Create();
+    }
+
+    /// <summary>
+    /// Initializes the PS Vita builder with explicit native build and generated-runtime fallback services.
+    /// </summary>
+    /// <param name="nativeBuildExecutor">Native build executor used by this builder instance.</param>
+    /// <param name="generatedRuntimeComponentSupportWriter">Generated runtime component fallback writer used by this builder instance.</param>
+    internal PsVitaPlatformAssetBuilder(
+        IPsVitaNativeBuildExecutor nativeBuildExecutor,
+        PsVitaGeneratedRuntimeComponentSupportWriter generatedRuntimeComponentSupportWriter) {
+        NativeBuildExecutor = nativeBuildExecutor ?? throw new ArgumentNullException(nameof(nativeBuildExecutor));
+        GeneratedRuntimeComponentSupportWriter = generatedRuntimeComponentSupportWriter ?? throw new ArgumentNullException(nameof(generatedRuntimeComponentSupportWriter));
         Descriptor = new PlatformBuilderDescriptor(
             "helengine.psvita.builder",
             "1.0.0",
@@ -157,6 +184,9 @@ public sealed class PsVitaPlatformAssetBuilder : IPlatformAssetBuilder {
                 string nativeBuildRoot = Path.Combine(request.WorkingRoot, "native");
                 string generatedCoreRoot = ResolveGeneratedCoreRoot(request);
                 Directory.CreateDirectory(generatedCoreRoot);
+                GeneratedRuntimeComponentSupportWriter.EnsureGeneratedRuntimeSupport(
+                    generatedCoreRoot,
+                    ResolveCookedSceneOutputPaths(request));
                 string nativeVpkPath = NativeBuildExecutor.Build(
                     ResolveRepositoryRoot(),
                     nativeBuildRoot,
@@ -214,7 +244,7 @@ public sealed class PsVitaPlatformAssetBuilder : IPlatformAssetBuilder {
         for (int sceneIndex = 0; sceneIndex < request.Manifest.Scenes.Length; sceneIndex++) {
             cancellationToken.ThrowIfCancellationRequested();
             PlatformBuildScene scene = request.Manifest.Scenes[sceneIndex];
-            StagePayload(scene.SceneId, scene.SourceIdentity, request.OutputRoot, stagedContentRootPath, diagnostics, diagnosticReporter, out bool copied);
+            bool copied = StageScenePayloads(scene, request.OutputRoot, stagedContentRootPath, diagnostics, diagnosticReporter);
             sceneOutcomes.Add(new PlatformBuildItemOutcome(
                 scene.SceneId,
                 copied ? PlatformBuildItemOutcomeKind.Succeeded : PlatformBuildItemOutcomeKind.Failed));
@@ -259,6 +289,46 @@ public sealed class PsVitaPlatformAssetBuilder : IPlatformAssetBuilder {
     }
 
     /// <summary>
+    /// Stages the scene source payload plus any editor-provided cooked payload references required by the runtime scene.
+    /// </summary>
+    static bool StageScenePayloads(
+        PlatformBuildScene scene,
+        string outputRoot,
+        string stagedContentRootPath,
+        List<PlatformBuildDiagnostic> diagnostics,
+        IPlatformBuildDiagnosticReporter diagnosticReporter) {
+        if (scene == null) {
+            throw new ArgumentNullException(nameof(scene));
+        }
+
+        HashSet<string> stagedSourceIdentities = new(StringComparer.OrdinalIgnoreCase);
+        List<string> sourceIdentities = [];
+        if (!string.IsNullOrWhiteSpace(scene.SourceIdentity)) {
+            sourceIdentities.Add(scene.SourceIdentity);
+        }
+
+        for (int payloadIndex = 0; payloadIndex < scene.PayloadReferences.Length; payloadIndex++) {
+            PlatformBuildPayloadReference payloadReference = scene.PayloadReferences[payloadIndex];
+            if (payloadReference != null && !string.IsNullOrWhiteSpace(payloadReference.SourceIdentity)) {
+                sourceIdentities.Add(payloadReference.SourceIdentity);
+            }
+        }
+
+        bool allCopied = true;
+        for (int sourceIndex = 0; sourceIndex < sourceIdentities.Count; sourceIndex++) {
+            string sourceIdentity = sourceIdentities[sourceIndex];
+            if (!stagedSourceIdentities.Add(sourceIdentity)) {
+                continue;
+            }
+
+            StagePayload(scene.SceneId, sourceIdentity, outputRoot, stagedContentRootPath, diagnostics, diagnosticReporter, out bool copied);
+            allCopied &= copied;
+        }
+
+        return allCopied;
+    }
+
+    /// <summary>
     /// Stages one payload into both the editor output root and the native-build content root.
     /// </summary>
     static void StagePayload(
@@ -299,7 +369,7 @@ public sealed class PsVitaPlatformAssetBuilder : IPlatformAssetBuilder {
 
         string relativePath = ResolveCookedRelativePath(sourceIdentity);
         CopyFile(sourcePath, Path.Combine(outputRoot, relativePath));
-        CopyFile(sourcePath, Path.Combine(stagedContentRootPath, relativePath));
+        CopyFile(sourcePath, Path.Combine(stagedContentRootPath, ResolveStagedContentRelativePath(relativePath)));
         copied = true;
     }
 
@@ -373,6 +443,25 @@ public sealed class PsVitaPlatformAssetBuilder : IPlatformAssetBuilder {
     }
 
     /// <summary>
+    /// Resolves the staged native-content relative path that will be mounted directly into the Vita player repository's cooked root.
+    /// </summary>
+    /// <param name="cookedRelativePath">Cooked relative path used for the editor output root.</param>
+    /// <returns>Relative path rooted at the native staged-content mount.</returns>
+    static string ResolveStagedContentRelativePath(string cookedRelativePath) {
+        const string CookedPrefix = "cooked";
+        if (string.IsNullOrWhiteSpace(cookedRelativePath)) {
+            throw new ArgumentException("Cooked relative path must be provided.", nameof(cookedRelativePath));
+        }
+
+        string normalizedCookedRelativePath = cookedRelativePath.Replace('\\', '/').TrimStart('/');
+        if (normalizedCookedRelativePath.StartsWith(CookedPrefix + "/", StringComparison.OrdinalIgnoreCase)) {
+            normalizedCookedRelativePath = normalizedCookedRelativePath.Substring(CookedPrefix.Length + 1);
+        }
+
+        return normalizedCookedRelativePath.Replace('/', Path.DirectorySeparatorChar);
+    }
+
+    /// <summary>
     /// Resolves the PS Vita repository root from the builder assembly location or environment override.
     /// </summary>
     /// <returns>Absolute repository root path.</returns>
@@ -402,6 +491,32 @@ public sealed class PsVitaPlatformAssetBuilder : IPlatformAssetBuilder {
             ? Path.Combine(request.WorkingRoot, "generated-core")
             : request.GeneratedCoreCppRootPath;
         return Path.GetFullPath(generatedCoreRoot);
+    }
+
+    /// <summary>
+    /// Resolves the cooked scene output paths that should drive Vita-local fallback runtime support generation.
+    /// </summary>
+    /// <param name="request">Resolved build request whose staged output roots should be inspected.</param>
+    /// <returns>Absolute cooked scene output paths that exist beneath the PS Vita output root.</returns>
+    static IReadOnlyList<string> ResolveCookedSceneOutputPaths(PlatformBuildRequest request) {
+        if (request == null) {
+            throw new ArgumentNullException(nameof(request));
+        }
+
+        List<string> cookedSceneOutputPaths = [];
+        for (int sceneIndex = 0; sceneIndex < request.Manifest.Scenes.Length; sceneIndex++) {
+            PlatformBuildScene scene = request.Manifest.Scenes[sceneIndex];
+            if (scene == null || string.IsNullOrWhiteSpace(scene.SourceIdentity)) {
+                continue;
+            }
+
+            string cookedSceneOutputPath = Path.Combine(request.OutputRoot, ResolveCookedRelativePath(scene.SourceIdentity));
+            if (File.Exists(cookedSceneOutputPath)) {
+                cookedSceneOutputPaths.Add(cookedSceneOutputPath);
+            }
+        }
+
+        return cookedSceneOutputPaths;
     }
 
     /// <summary>

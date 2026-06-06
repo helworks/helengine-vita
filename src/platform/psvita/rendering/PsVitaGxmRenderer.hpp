@@ -9,6 +9,8 @@
 #include "platform/psvita/rendering/PsVitaQueuedQuad.hpp"
 
 namespace helengine::psvita::rendering {
+    class PsVitaRuntimeTexture;
+
     /// Owns the native PS Vita GXM frame lifecycle that will submit textured sprite and text quads.
     class PsVitaGxmRenderer final {
     public:
@@ -37,8 +39,17 @@ namespace helengine::psvita::rendering {
         std::size_t GetSubmittedQuadCount() const;
 
     private:
+        /// Lazily uploads one runtime texture into a native PS Vita texture allocation before the first draw that references it.
+        void EnsureUploaded(PsVitaRuntimeTexture* runtimeTexture);
+
+        /// Submits one queued quad through the GPU-backed textured-triangle path.
+        void SubmitQuad(const PsVitaQueuedQuad& queuedQuad);
+
         /// Stores whether the renderer completed its initialization path.
         bool Initialized;
+
+        /// Stores whether one frame is currently open for drawing.
+        bool FrameBegun;
 
         /// Stores the clear color requested for the current frame.
         std::uint32_t ActiveClearColorAbgr;

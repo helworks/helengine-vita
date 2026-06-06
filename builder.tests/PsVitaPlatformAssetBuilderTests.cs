@@ -9,6 +9,7 @@ using helengine.baseplatform.Results;
 using helengine.psvita.builder;
 using helengine;
 using Xunit;
+using System.Text;
 
 namespace helengine.psvita.builder.tests;
 
@@ -53,7 +54,7 @@ public sealed class PsVitaPlatformAssetBuilderTests {
 
         Directory.CreateDirectory(Path.GetDirectoryName(sceneSourcePath));
         Directory.CreateDirectory(generatedCoreRoot);
-        File.WriteAllText(sceneSourcePath, "scene payload");
+        File.WriteAllBytes(sceneSourcePath, CreateCookedSceneBytes());
 
         string previousDirectory = Directory.GetCurrentDirectory();
         try {
@@ -116,8 +117,214 @@ public sealed class PsVitaPlatformAssetBuilderTests {
             Assert.Empty(diagnosticReporter.Diagnostics);
             Assert.True(nativeBuildExecutor.WasCalled);
             Assert.True(File.Exists(Path.Combine(outputRoot, "cooked", "scenes", "startup.hasset")));
+            Assert.True(File.Exists(Path.Combine(nativeBuildExecutor.StagedContentRootPath, "scenes", "startup.hasset")));
+            Assert.False(File.Exists(Path.Combine(nativeBuildExecutor.StagedContentRootPath, "cooked", "scenes", "startup.hasset")));
             Assert.True(File.Exists(Path.Combine(outputRoot, "helengine_psvita.vpk")));
             Assert.True(progressReporter.Updates.Count >= 2);
+        } finally {
+            Directory.SetCurrentDirectory(previousDirectory);
+            if (Directory.Exists(workingRoot)) {
+                Directory.Delete(workingRoot, true);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Verifies the builder stages cooked payload references supplied by the editor build graph so imported runtime dependencies reach the final VPK.
+    /// </summary>
+    [Fact]
+    public async Task BuildAsync_whenSceneCarriesPayloadReferences_stagesImportedCookedDependencies() {
+        string workingRoot = Path.Combine(Path.GetTempPath(), "helengine-psvita-builder-tests-" + Guid.NewGuid().ToString("N"));
+        string outputRoot = Path.Combine(workingRoot, "out");
+        string sourceRoot = Path.Combine(workingRoot, "project");
+        string generatedCoreRoot = Path.Combine(workingRoot, "generated-core");
+        string sceneSourcePath = Path.Combine(sourceRoot, "cooked", "scenes", "startup.hasset");
+        string importedTexturePath = Path.Combine(sourceRoot, "cooked", "imported", "menu.tex");
+
+        Directory.CreateDirectory(Path.GetDirectoryName(sceneSourcePath));
+        Directory.CreateDirectory(Path.GetDirectoryName(importedTexturePath));
+        Directory.CreateDirectory(generatedCoreRoot);
+        File.WriteAllBytes(sceneSourcePath, CreateCookedSceneBytes());
+        File.WriteAllBytes(importedTexturePath, [1, 2, 3, 4]);
+
+        string previousDirectory = Directory.GetCurrentDirectory();
+        try {
+            Directory.SetCurrentDirectory(sourceRoot);
+
+            PlatformBuildManifest manifest = new(
+                1,
+                "project",
+                "1.0.0",
+                "1.0.0",
+                "psvita",
+                "1.0.0",
+                "startup",
+                [
+                    new PlatformBuildScene(
+                        "startup",
+                        "Startup",
+                        "cooked/scenes/startup.hasset",
+                        [
+                            new PlatformBuildPayloadReference("cooked/scenes/startup.hasset", "cooked/scenes/startup.hasset"),
+                            new PlatformBuildPayloadReference("cooked/imported/menu.tex", "cooked/imported/menu.tex")
+                        ],
+                        [new KeyValuePair<string, string>("cooked-relative-path", "scenes/startup.hasset")])
+                ],
+                [],
+                [],
+                [],
+                [],
+                new PlatformContainerWritePlan(string.Empty, []));
+
+            PlatformBuildRequest request = new(
+                manifest,
+                [new PlatformBuildTargetVariant("psvita-default", "psvita", "psvita", "debug")],
+                [new PlatformCookProfile(
+                    "debug",
+                    "Debug",
+                    new PlatformCookProfileCapabilities(
+                        "psvita",
+                        "raw",
+                        "rgba",
+                        "psvita-scene-v1",
+                        PlatformSerializationEndianness.LittleEndian))],
+                outputRoot,
+                Path.Combine(workingRoot, "tmp"),
+                "debug",
+                "psvita-forward",
+                "default",
+                new Dictionary<string, string>(),
+                new Dictionary<string, string>(),
+                new Dictionary<string, string>(),
+                generatedCoreRoot,
+                "psvita-memory-card",
+                "vpk-package");
+
+            RecordingPsVitaNativeBuildExecutor nativeBuildExecutor = new();
+            PsVitaPlatformAssetBuilder builder = new(nativeBuildExecutor);
+            RecordingProgressReporter progressReporter = new();
+            RecordingDiagnosticReporter diagnosticReporter = new();
+
+            PlatformBuildReport report = await builder.BuildAsync(request, progressReporter, diagnosticReporter, CancellationToken.None);
+
+            Assert.True(report.Succeeded);
+            Assert.Empty(diagnosticReporter.Diagnostics);
+            Assert.True(File.Exists(Path.Combine(outputRoot, "cooked", "scenes", "startup.hasset")));
+            Assert.True(File.Exists(Path.Combine(outputRoot, "cooked", "imported", "menu.tex")));
+            Assert.True(File.Exists(Path.Combine(nativeBuildExecutor.StagedContentRootPath, "scenes", "startup.hasset")));
+            Assert.True(File.Exists(Path.Combine(nativeBuildExecutor.StagedContentRootPath, "imported", "menu.tex")));
+            Assert.True(progressReporter.Updates.Count >= 2);
+        } finally {
+            Directory.SetCurrentDirectory(previousDirectory);
+            if (Directory.Exists(workingRoot)) {
+                Directory.Delete(workingRoot, true);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Verifies the builder emits fallback generated runtime deserializer support for menu-scene component types when the workspace core does not already contain it.
+    /// </summary>
+    [Fact]
+    public async Task BuildAsync_when_generated_runtime_deserializer_support_is_missing_emits_menu_runtime_support_sources() {
+        string workingRoot = Path.Combine(Path.GetTempPath(), "helengine-psvita-builder-tests-" + Guid.NewGuid().ToString("N"));
+        string outputRoot = Path.Combine(workingRoot, "out");
+        string sourceRoot = Path.Combine(workingRoot, "project");
+        string generatedCoreRoot = Path.Combine(workingRoot, "generated-core");
+        string sceneSourcePath = Path.Combine(sourceRoot, "scenes", "startup.hasset");
+
+        Directory.CreateDirectory(Path.GetDirectoryName(sceneSourcePath));
+        Directory.CreateDirectory(generatedCoreRoot);
+        File.WriteAllBytes(
+            sceneSourcePath,
+            CreateCookedSceneBytes(
+                "helengine.SpriteComponent",
+                "helengine.TextComponent",
+                "city.menu.MenuComponent, gameplay"));
+
+        string previousDirectory = Directory.GetCurrentDirectory();
+        try {
+            Directory.SetCurrentDirectory(sourceRoot);
+
+            PlatformBuildManifest manifest = new(
+                1,
+                "project",
+                "1.0.0",
+                "1.0.0",
+                "psvita",
+                "1.0.0",
+                "startup",
+                [
+                    new PlatformBuildScene(
+                        "startup",
+                        "Startup",
+                        "scenes/startup.hasset",
+                        [],
+                        [new KeyValuePair<string, string>("cooked-relative-path", "scenes/startup.hasset")])
+                ],
+                [],
+                [],
+                [],
+                [],
+                new PlatformContainerWritePlan(string.Empty, []));
+
+            PlatformBuildRequest request = new(
+                manifest,
+                [new PlatformBuildTargetVariant("psvita-default", "psvita", "psvita", "debug")],
+                [new PlatformCookProfile(
+                    "debug",
+                    "Debug",
+                    new PlatformCookProfileCapabilities(
+                        "psvita",
+                        "raw",
+                        "rgba",
+                        "psvita-scene-v1",
+                        PlatformSerializationEndianness.LittleEndian))],
+                outputRoot,
+                Path.Combine(workingRoot, "tmp"),
+                "debug",
+                "psvita-forward",
+                "default",
+                new Dictionary<string, string>(),
+                new Dictionary<string, string>(),
+                new Dictionary<string, string>(),
+                generatedCoreRoot,
+                "psvita-memory-card",
+                "vpk-package");
+
+            RecordingPsVitaNativeBuildExecutor nativeBuildExecutor = new();
+            PsVitaPlatformAssetBuilder builder = new(nativeBuildExecutor);
+            RecordingProgressReporter progressReporter = new();
+            RecordingDiagnosticReporter diagnosticReporter = new();
+
+            PlatformBuildReport report = await builder.BuildAsync(request, progressReporter, diagnosticReporter, CancellationToken.None);
+
+            Assert.True(report.Succeeded);
+            Assert.Empty(diagnosticReporter.Diagnostics);
+            Assert.True(nativeBuildExecutor.WasCalled);
+            Assert.Equal(generatedCoreRoot, nativeBuildExecutor.GeneratedCoreRootPath);
+            Assert.True(File.Exists(Path.Combine(generatedCoreRoot, "GeneratedRuntimeComponentDeserializerRegistration.hpp")));
+            Assert.True(File.Exists(Path.Combine(generatedCoreRoot, "GeneratedRuntimeComponentDeserializerRegistration.cpp")));
+            Assert.True(File.Exists(Path.Combine(generatedCoreRoot, "GeneratedRuntimeSpriteComponentDeserializer.hpp")));
+            Assert.True(File.Exists(Path.Combine(generatedCoreRoot, "GeneratedRuntimeSpriteComponentDeserializer.cpp")));
+            Assert.True(File.Exists(Path.Combine(generatedCoreRoot, "GeneratedRuntimeTextComponentDeserializer.hpp")));
+            Assert.True(File.Exists(Path.Combine(generatedCoreRoot, "GeneratedRuntimeTextComponentDeserializer.cpp")));
+            Assert.True(File.Exists(Path.Combine(generatedCoreRoot, "PsVitaUnsupportedRuntimeComponent.hpp")));
+            Assert.True(File.Exists(Path.Combine(generatedCoreRoot, "PsVitaUnsupportedRuntimeComponent.cpp")));
+            Assert.True(File.Exists(Path.Combine(generatedCoreRoot, "PsVitaUnsupportedRuntimeComponentDeserializer.hpp")));
+            Assert.True(File.Exists(Path.Combine(generatedCoreRoot, "PsVitaUnsupportedRuntimeComponentDeserializer.cpp")));
+            Assert.Contains(
+                "city.menu.MenuComponent, gameplay",
+                File.ReadAllText(Path.Combine(generatedCoreRoot, "GeneratedRuntimeComponentDeserializerRegistration.cpp"), Encoding.UTF8),
+                StringComparison.Ordinal);
+            Assert.Contains(
+                "#include \"GeneratedRuntimeSpriteComponentDeserializer.cpp\"",
+                File.ReadAllText(Path.Combine(generatedCoreRoot, "helengine_core_unity.cpp"), Encoding.UTF8),
+                StringComparison.Ordinal);
+            Assert.Contains(
+                "#include \"PsVitaUnsupportedRuntimeComponentDeserializer.cpp\"",
+                File.ReadAllText(Path.Combine(generatedCoreRoot, "helengine_core_unity.cpp"), Encoding.UTF8),
+                StringComparison.Ordinal);
         } finally {
             Directory.SetCurrentDirectory(previousDirectory);
             if (Directory.Exists(workingRoot)) {
@@ -151,6 +358,34 @@ public sealed class PsVitaPlatformAssetBuilderTests {
         Assert.Equal("BaseColorBuffer", baseColorBuffer.Name);
         Assert.Equal(16, baseColorBuffer.Data.Length);
         Assert.Empty(result.ReferencedShaderAssetIds);
+    }
+
+    /// <summary>
+    /// Creates one minimal cooked scene payload that contains the supplied serialized component type identifiers.
+    /// </summary>
+    /// <param name="componentTypeIds">Serialized component type identifiers to include beneath one root entity.</param>
+    /// <returns>Cooked scene bytes suitable for builder-side component-type discovery.</returns>
+    static byte[] CreateCookedSceneBytes(params string[] componentTypeIds) {
+        if (componentTypeIds == null) {
+            throw new ArgumentNullException(nameof(componentTypeIds));
+        }
+
+        SceneComponentAssetRecord[] componentRecords = new SceneComponentAssetRecord[componentTypeIds.Length];
+        for (int componentIndex = 0; componentIndex < componentTypeIds.Length; componentIndex++) {
+            componentRecords[componentIndex] = new SceneComponentAssetRecord {
+                ComponentTypeId = componentTypeIds[componentIndex],
+                Payload = Array.Empty<byte>()
+            };
+        }
+
+        SceneAsset sceneAsset = new SceneAsset {
+            RootEntities = [
+                new SceneEntityAsset {
+                    Components = componentRecords
+                }
+            ]
+        };
+        return global::helengine.files.AssetSerializer.SerializeToBytes(sceneAsset);
     }
 
 }

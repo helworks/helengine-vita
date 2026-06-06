@@ -85,4 +85,54 @@ public sealed class PsVitaGxmRenderPipelineSourceAuditTests {
         Assert.DoesNotContain("void PsVitaRenderManager2D::DrawText(::ITextDrawable2D* text) {\r\n    }", renderManagerSource, StringComparison.Ordinal);
         Assert.DoesNotContain("void PsVitaRenderManager2D::DrawText(::ITextDrawable2D* text) {\n    }", renderManagerSource, StringComparison.Ordinal);
     }
+
+    /// <summary>
+    /// Verifies the Vita runtime can traverse camera-owned ordered 2D queues so loaded sprite and text components actually reach the queued-quad renderer.
+    /// </summary>
+    [Fact]
+    public void Source_whenDispatchingCameraOwned2dQueues_usesOrderedQueueTraversalAndDrawableDrawCalls() {
+        string renderManager2DHeaderPath = PsVitaRepositoryPathResolver.ResolvePath("src", "platform", "psvita", "rendering", "PsVitaRenderManager2D.hpp");
+        string renderManager2DSourcePath = PsVitaRepositoryPathResolver.ResolvePath("src", "platform", "psvita", "rendering", "PsVitaRenderManager2D.cpp");
+        string renderManager3DHeaderPath = PsVitaRepositoryPathResolver.ResolvePath("src", "platform", "psvita", "rendering", "PsVitaRenderManager3D.hpp");
+        string renderManager3DSourcePath = PsVitaRepositoryPathResolver.ResolvePath("src", "platform", "psvita", "rendering", "PsVitaRenderManager3D.cpp");
+
+        string renderManager2DHeaderSource = File.ReadAllText(renderManager2DHeaderPath);
+        string renderManager2DSource = File.ReadAllText(renderManager2DSourcePath);
+        string renderManager3DHeaderSource = File.ReadAllText(renderManager3DHeaderPath);
+        string renderManager3DSource = File.ReadAllText(renderManager3DSourcePath);
+
+        Assert.Contains("public ::IRenderVisitor2D", renderManager2DHeaderSource, StringComparison.Ordinal);
+        Assert.Contains("void DrawCamera(::ICamera* camera);", renderManager2DHeaderSource, StringComparison.Ordinal);
+        Assert.Contains("void Visit(::IDrawable2D* drawable) override;", renderManager2DHeaderSource, StringComparison.Ordinal);
+        Assert.Contains("renderQueue->VisitOrdered(this);", renderManager2DSource, StringComparison.Ordinal);
+        Assert.Contains("drawable->Draw();", renderManager2DSource, StringComparison.Ordinal);
+        Assert.Contains("void Draw() override;", renderManager3DHeaderSource, StringComparison.Ordinal);
+        Assert.Contains("Core::Instance->ObjectManager->get_Cameras()", renderManager3DSource, StringComparison.Ordinal);
+        Assert.Contains("renderManager2D->DrawCamera(camera);", renderManager3DSource, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Verifies the PS Vita renderer is backed by a real GPU draw/present path instead of the earlier no-op submission stub.
+    /// </summary>
+    [Fact]
+    public void Source_whenSubmittingQueuedQuads_usesVita2dGpuDrawingAndPresent() {
+        string gxmRendererHeaderPath = PsVitaRepositoryPathResolver.ResolvePath("src", "platform", "psvita", "rendering", "PsVitaGxmRenderer.hpp");
+        string gxmRendererSourcePath = PsVitaRepositoryPathResolver.ResolvePath("src", "platform", "psvita", "rendering", "PsVitaGxmRenderer.cpp");
+        string gpuTextureHeaderPath = PsVitaRepositoryPathResolver.ResolvePath("src", "platform", "psvita", "rendering", "PsVitaGpuTexture.hpp");
+        string cmakePath = PsVitaRepositoryPathResolver.ResolvePath("CMakeLists.txt");
+
+        string gxmRendererHeaderSource = File.ReadAllText(gxmRendererHeaderPath);
+        string gxmRendererSource = File.ReadAllText(gxmRendererSourcePath);
+        string gpuTextureHeaderSource = File.ReadAllText(gpuTextureHeaderPath);
+        string cmakeSource = File.ReadAllText(cmakePath);
+
+        Assert.Contains("void EnsureUploaded(PsVitaRuntimeTexture* runtimeTexture);", gxmRendererHeaderSource, StringComparison.Ordinal);
+        Assert.Contains("void SubmitQuad(const PsVitaQueuedQuad& queuedQuad);", gxmRendererHeaderSource, StringComparison.Ordinal);
+        Assert.Contains("vita2d_init", gxmRendererSource, StringComparison.Ordinal);
+        Assert.Contains("vita2d_start_drawing", gxmRendererSource, StringComparison.Ordinal);
+        Assert.Contains("vita2d_draw_array_textured", gxmRendererSource, StringComparison.Ordinal);
+        Assert.Contains("vita2d_swap_buffers", gxmRendererSource, StringComparison.Ordinal);
+        Assert.Contains("vita2d_texture*", gpuTextureHeaderSource, StringComparison.Ordinal);
+        Assert.Contains("vita2d", cmakeSource, StringComparison.Ordinal);
+    }
 }

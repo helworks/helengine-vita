@@ -1,15 +1,19 @@
 #include "platform/psvita/PsVitaBootHost.hpp"
 
+#include <cstdio>
 #include <cstring>
 #include <malloc.h>
 #include <stdexcept>
+#include <string>
 
 #if HELENGINE_PSVITA_HAS_GENERATED_CORE
 #include "Core.hpp"
 #include "CoreInitializationOptions.hpp"
 #include "PlatformInfo.hpp"
+#include "RuntimeSceneLoadService.hpp"
 #include "SceneManager.hpp"
 #include "platform/psvita/PsVitaInputBackend.hpp"
+#include "platform/psvita/PsVitaRuntimeDiagnosticsProvider.hpp"
 #include "platform/psvita/PsVitaRuntimeSceneCatalogFactory.hpp"
 #include "platform/psvita/rendering/PsVitaGxmRenderer.hpp"
 #include "platform/psvita/rendering/PsVitaRenderManager2D.hpp"
@@ -28,6 +32,7 @@ namespace helengine::psvita {
     namespace {
         constexpr double FrameDeltaSeconds = 1.0 / 60.0;
         constexpr const char* RuntimeContentRootPath = "app0:/";
+        constexpr const char* BootTracePath = "ux0:/data/helengine_psvita_boot.log";
         constexpr unsigned int BufferAlignment = 0x40000;
         constexpr unsigned int ScreenWidth = 960;
         constexpr unsigned int ScreenHeight = 544;
@@ -37,6 +42,72 @@ namespace helengine::psvita {
         constexpr unsigned int PixelBytes = PixelCount * BytesPerPixel;
         constexpr unsigned int AlignedPixelBytes = ((PixelBytes + BufferAlignment - 1) / BufferAlignment) * BufferAlignment;
         constexpr unsigned int CornflowerBlue = 0xFFED9564;
+
+#if HELENGINE_PSVITA_HAS_GENERATED_CORE
+        /// Appends the latest generated-core scene manager trace state when one scene transition fails.
+        void AppendSceneManagerTrace(PsVitaBootHost* bootHost, Core* engineCore) {
+            if (bootHost == nullptr || engineCore == nullptr || engineCore->get_SceneManager() == nullptr) {
+                return;
+            }
+
+            SceneManager* sceneManager = engineCore->get_SceneManager();
+            std::FILE* file = std::fopen(BootTracePath, "a");
+            if (file == nullptr) {
+                return;
+            }
+
+            std::string stageMessage = "SceneManagerTrace: stage=" + sceneManager->get_LastTraceStage();
+            std::string sceneMessage = "SceneManagerTrace: scene=" + sceneManager->get_LastTraceSceneId();
+            std::fputs(stageMessage.c_str(), file);
+            std::fputc('\n', file);
+            std::fputs(sceneMessage.c_str(), file);
+            std::fputc('\n', file);
+            std::fclose(file);
+        }
+
+        /// Appends the latest generated-core scene load trace state when one scene materialization fails.
+        void AppendSceneLoadTrace(PsVitaBootHost* bootHost, Core* engineCore) {
+            if (bootHost == nullptr || engineCore == nullptr || engineCore->get_SceneLoadService() == nullptr) {
+                return;
+            }
+
+            RuntimeSceneLoadService* sceneLoadService = engineCore->get_SceneLoadService();
+            std::FILE* file = std::fopen(BootTracePath, "a");
+            if (file == nullptr) {
+                return;
+            }
+
+            std::string stageMessage = "SceneLoadTrace: stage=" + sceneLoadService->get_LastTraceStage();
+            std::string rootEntityMessage = "SceneLoadTrace: rootEntityIndex=" + std::to_string(sceneLoadService->get_LastTraceRootEntityIndex());
+            std::string entityDepthMessage = "SceneLoadTrace: entityDepth=" + std::to_string(sceneLoadService->get_LastTraceEntityDepth());
+            std::string componentTypeMessage = "SceneLoadTrace: componentType=" + sceneLoadService->get_LastTraceComponentTypeId();
+            std::string textStageMessage = "SceneLoadTrace: textLoadStage=" + sceneLoadService->get_LastTextLoadStage();
+            std::string textFontMessage = "SceneLoadTrace: textFont=" + sceneLoadService->get_LastTextFontRelativePath();
+            std::string textureStageMessage = "SceneLoadTrace: textureLoadStage=" + sceneLoadService->get_LastTextureLoadStage();
+            std::string texturePathMessage = "SceneLoadTrace: texturePath=" + sceneLoadService->get_LastTextureRelativePath();
+            std::string fontDeserializeMessage = "SceneLoadTrace: fontDeserializeStage=" + sceneLoadService->get_LastFontDeserializeStage();
+
+            std::fputs(stageMessage.c_str(), file);
+            std::fputc('\n', file);
+            std::fputs(rootEntityMessage.c_str(), file);
+            std::fputc('\n', file);
+            std::fputs(entityDepthMessage.c_str(), file);
+            std::fputc('\n', file);
+            std::fputs(componentTypeMessage.c_str(), file);
+            std::fputc('\n', file);
+            std::fputs(textStageMessage.c_str(), file);
+            std::fputc('\n', file);
+            std::fputs(textFontMessage.c_str(), file);
+            std::fputc('\n', file);
+            std::fputs(textureStageMessage.c_str(), file);
+            std::fputc('\n', file);
+            std::fputs(texturePathMessage.c_str(), file);
+            std::fputc('\n', file);
+            std::fputs(fontDeserializeMessage.c_str(), file);
+            std::fputc('\n', file);
+            std::fclose(file);
+        }
+#endif
     }
 
     /// Creates the PS Vita boot host with no initialized frame buffer state.
@@ -50,6 +121,7 @@ namespace helengine::psvita {
         , EngineRenderManager2D(nullptr)
         , EngineInputBackend(nullptr)
         , EnginePlatformInfo(nullptr)
+        , EngineRuntimeDiagnosticsProvider(nullptr)
         , GxmRenderer(nullptr)
 #endif
     {
@@ -57,29 +129,80 @@ namespace helengine::psvita {
 
     /// Initializes the PS Vita display path and keeps the first boot frame visible until shutdown.
     int PsVitaBootHost::Run() {
-        if (!InitializeGraphics()) {
-            return 1;
-        }
+        ResetBootTrace();
+        AppendBootTrace("Run: begin");
 
-        ClearFrameBuffer();
+        try {
+            AppendBootTrace("Run: InitializeGraphics");
+            if (!InitializeGraphics()) {
+                AppendBootTrace("Run: InitializeGraphics failed");
+                return 1;
+            }
+
+            AppendBootTrace("Run: ClearFrameBuffer");
+            ClearFrameBuffer();
 
 #if HELENGINE_PSVITA_HAS_GENERATED_CORE
-        InitializeCore();
-        LoadStartupScene();
-        RunMainLoop();
+            AppendBootTrace("Run: InitializeCore");
+            InitializeCore();
+            AppendBootTrace("Run: LoadStartupScene");
+            LoadStartupScene();
+            AppendBootTrace("Run: RunMainLoop");
+            RunMainLoop();
 #else
-        while (true) {
-            PresentFrame();
-        }
+            while (true) {
+                PresentFrame();
+            }
 #endif
+        } catch (const std::exception& ex) {
+#if HELENGINE_PSVITA_HAS_GENERATED_CORE
+            AppendSceneManagerTrace(this, EngineCore);
+            AppendSceneLoadTrace(this, EngineCore);
+#endif
+            AppendBootTrace(("Run: exception: " + std::string(ex.what())).c_str());
+            return 1;
+        } catch (...) {
+#if HELENGINE_PSVITA_HAS_GENERATED_CORE
+            AppendSceneManagerTrace(this, EngineCore);
+            AppendSceneLoadTrace(this, EngineCore);
+#endif
+            AppendBootTrace("Run: unknown exception");
+            return 1;
+        }
 
         return 0;
     }
 
+    /// Clears the persisted Vita boot trace file before one new startup attempt.
+    void PsVitaBootHost::ResetBootTrace() {
+        std::FILE* file = std::fopen(BootTracePath, "w");
+        if (file != nullptr) {
+            std::fclose(file);
+        }
+    }
+
+    /// Appends one line to the persisted Vita boot trace file.
+    void PsVitaBootHost::AppendBootTrace(const char* message) {
+        if (message == nullptr) {
+            return;
+        }
+
+        std::FILE* file = std::fopen(BootTracePath, "a");
+        if (file == nullptr) {
+            return;
+        }
+
+        std::fputs(message, file);
+        std::fputc('\n', file);
+        std::fclose(file);
+    }
+
     /// Initializes the display buffer configuration required for the first native frame presentation.
     bool PsVitaBootHost::InitializeGraphics() {
+        AppendBootTrace("InitializeGraphics: begin");
         Pixels = static_cast<unsigned int*>(memalign(BufferAlignment, AlignedPixelBytes));
         if (Pixels == nullptr) {
+            AppendBootTrace("InitializeGraphics: memalign failed");
             return false;
         }
 
@@ -94,16 +217,19 @@ namespace helengine::psvita {
 #if HELENGINE_PSVITA_HAS_GENERATED_CORE
         GxmRenderer = new rendering::PsVitaGxmRenderer();
         if (!GxmRenderer->Initialize()) {
+            AppendBootTrace("InitializeGraphics: GxmRenderer initialize failed");
             return false;
         }
 #endif
 
+        AppendBootTrace("InitializeGraphics: success");
         return true;
     }
 
 #if HELENGINE_PSVITA_HAS_GENERATED_CORE
     /// Initializes the generated-core runtime with temporary Vita-native backend stubs.
     void PsVitaBootHost::InitializeCore() {
+        AppendBootTrace("InitializeCore: begin");
         EngineCore = new Core();
         EngineOptions = EngineCore->get_InitializationOptions();
         EngineOptions->set_ContentRootPath(RuntimeContentRootPath);
@@ -121,13 +247,17 @@ namespace helengine::psvita {
         static_cast<PsVitaRenderManager2D*>(EngineRenderManager2D)->SetGxmRenderer(GxmRenderer);
         EngineInputBackend = new PsVitaInputBackend();
         EnginePlatformInfo = new PlatformInfo("psvita", "1");
+        EngineRuntimeDiagnosticsProvider = new PsVitaRuntimeDiagnosticsProvider();
         EngineRenderManager3D->AddWindow(0, ScreenWidth, ScreenHeight);
+        EngineOptions->set_RuntimeDiagnosticsProvider(EngineRuntimeDiagnosticsProvider);
         EngineCore->Initialize(EngineRenderManager3D, EngineRenderManager2D, EngineInputBackend, EnginePlatformInfo);
+        AppendBootTrace("InitializeCore: success");
     }
 
     /// Loads the packaged startup scene through the generated-core scene manager when runtime manifests are available.
     void PsVitaBootHost::LoadStartupScene() {
 #if HELENGINE_PSVITA_HAS_RUNTIME_MANIFESTS
+        AppendBootTrace("LoadStartupScene: begin");
         const char* configuredStartupSceneRelativePath = he_get_runtime_startup_scene_relative_path();
         if (configuredStartupSceneRelativePath == nullptr || configuredStartupSceneRelativePath[0] == '\0') {
             throw std::runtime_error("PS Vita runtime startup manifest did not define a startup scene.");
@@ -157,11 +287,30 @@ namespace helengine::psvita {
         }
 
         EngineCore->get_SceneManager()->LoadScene(startupSceneId, SceneLoadMode::Single);
+        AppendBootTrace("LoadStartupScene: success");
 #endif
     }
 
     /// Advances the runtime update and draw loop while preserving the milestone boot frame.
     void PsVitaBootHost::RunMainLoop() {
+        AppendBootTrace("RunMainLoop: first update");
+        EngineCore->Update(FrameDeltaSeconds);
+        AppendBootTrace("RunMainLoop: first begin frame");
+        GxmRenderer->BeginFrame(CornflowerBlue);
+        AppendBootTrace("RunMainLoop: first commit pending");
+        if (EngineCore->get_SceneManager() != nullptr) {
+            EngineCore->get_SceneManager()->CommitPendingOperationsAtFrameBoundary();
+        }
+        AppendBootTrace("RunMainLoop: first commit pending success");
+        AppendBootTrace("RunMainLoop: first render manager 3d draw");
+        EngineRenderManager3D->Draw();
+        AppendBootTrace("RunMainLoop: first render manager 3d draw success");
+        AppendBootTrace("RunMainLoop: first draw2d");
+        EngineRenderManager2D->Draw();
+        AppendBootTrace("RunMainLoop: first present");
+        PresentFrame();
+        AppendBootTrace("RunMainLoop: first present complete");
+
         while (true) {
             EngineCore->Update(FrameDeltaSeconds);
             GxmRenderer->BeginFrame(CornflowerBlue);

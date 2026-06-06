@@ -4,12 +4,17 @@
 
 #include <cstdint>
 
+struct vita2d_texture;
+
 namespace helengine::psvita::rendering {
-    /// Stores the future native PS Vita GPU texture ownership that will back one runtime texture inside the GXM 2D renderer.
+    /// Stores one native PS Vita GPU texture allocation that backs one runtime texture inside the GPU-backed 2D renderer.
     class PsVitaGpuTexture final {
     public:
         /// Creates one empty PS Vita GPU texture record with no uploaded native allocation.
         PsVitaGpuTexture();
+
+        /// Releases the owned native PS Vita texture allocation when one upload occurred.
+        ~PsVitaGpuTexture();
 
         /// Gets the uploaded texture width in pixels.
         std::uint32_t GetWidth() const;
@@ -20,7 +25,16 @@ namespace helengine::psvita::rendering {
         /// Gets whether the texture currently represents one uploaded native texture allocation.
         bool IsUploaded() const;
 
+        /// Gets the owned native PS Vita texture allocation, or <c>nullptr</c> when the texture was not uploaded yet.
+        vita2d_texture* GetNativeTexture() const;
+
+        /// Attaches one uploaded native PS Vita texture allocation to this runtime texture wrapper.
+        void SetNativeTexture(vita2d_texture* nativeTexture, std::uint32_t width, std::uint32_t height);
+
     private:
+        /// Stores the owned native PS Vita texture allocation.
+        vita2d_texture* NativeTexture;
+
         /// Stores the uploaded texture width in pixels.
         std::uint32_t Width;
 
