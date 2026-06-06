@@ -95,12 +95,14 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     vita2d
     SceAppMgr_stub
     SceCommonDialog_stub
+    SceCtrl_stub
     SceDisplay_stub
     SceGxm_stub
     SceLibKernel_stub
     ScePgf_stub
     ScePvf_stub
     SceSysmodule_stub
+    SceTouch_stub
 )
 
 vita_create_self(${PROJECT_NAME}.self ${PROJECT_NAME})

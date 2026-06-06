@@ -24,6 +24,24 @@ DOCKER_CONFIG=/tmp/docker-no-creds docker run --rm -v "$PWD":/workspace -w /work
 
 The build emits `build/helengine_psvita.vpk`.
 
+## Editor build
+
+Use the shared Helengine platform build script when building the City project for PS Vita through the editor pipeline:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File C:\dev\helworks\helengine\artifacts\build-platform.ps1 `
+    -Project C:\dev\helprojs\city\project.heproj `
+    -Platform psvita `
+    -Output C:\dev\helprojs\city\vita-build
+```
+
+Use the standardized Vita3K launcher script to run that exact build artifact in the emulator:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\launch-vita3k.ps1 `
+    -VpkPath C:\dev\helprojs\city\vita-build\helengine_psvita.vpk
+```
+
 ## Generated core seam
 
 The native build reserves `HELENGINE_CORE_CPP_ROOT` for later `cs2.cpp` integration, but the first milestone does not compile generated core output yet.
