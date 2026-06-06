@@ -4,6 +4,7 @@
 
 #if HELENGINE_PSVITA_HAS_GENERATED_CORE
 class Core;
+class ICamera;
 class CoreInitializationOptions;
 class RenderManager3D;
 class RenderManager2D;
@@ -44,6 +45,9 @@ namespace helengine::psvita {
 
         /// Advances the runtime update and draw loop while preserving the milestone boot frame.
         void RunMainLoop();
+
+        /// Resolves the clear color for the active runtime camera, falling back to the bootstrap color when none is authored.
+        unsigned int ResolveActiveCameraClearColorAbgr();
 #endif
 
         /// Fills the front buffer with the milestone cornflower blue color.

@@ -35,8 +35,25 @@ public sealed class PsVitaBootHostSourceAuditTests {
         Assert.Contains("he_get_runtime_startup_scene_relative_path()", sourceCode, StringComparison.Ordinal);
         Assert.Contains("he_runtime_scene_catalog_entries(&runtimeSceneCount)", sourceCode, StringComparison.Ordinal);
         Assert.Contains("EngineCore->get_SceneManager()->LoadScene(startupSceneId, SceneLoadMode::Single);", sourceCode, StringComparison.Ordinal);
-        Assert.Contains("GxmRenderer->BeginFrame(CornflowerBlue);", sourceCode, StringComparison.Ordinal);
+        Assert.Contains("unsigned int ResolveActiveCameraClearColorAbgr();", headerSource, StringComparison.Ordinal);
+        Assert.Contains("GxmRenderer->BeginFrame(ResolveActiveCameraClearColorAbgr());", sourceCode, StringComparison.Ordinal);
         Assert.Contains("EngineRenderManager2D->Draw();", sourceCode, StringComparison.Ordinal);
         Assert.Contains("GxmRenderer->PresentFrame();", sourceCode, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Verifies generated-core Vita builds resolve the active camera clear color instead of hardcoding the bootstrap cornflower-blue clear.
+    /// </summary>
+    [Fact]
+    public void Source_whenGeneratedCoreMainMenuDraws_resolvesClearColorFromTheActiveCamera() {
+        string sourcePath = PsVitaRepositoryPathResolver.ResolvePath("src", "platform", "psvita", "PsVitaBootHost.cpp");
+        string sourceCode = File.ReadAllText(sourcePath);
+
+        Assert.Contains("CameraClearSettings", sourceCode, StringComparison.Ordinal);
+        Assert.Contains("ObjectManager->get_Cameras()", sourceCode, StringComparison.Ordinal);
+        Assert.Contains("get_ClearSettings()", sourceCode, StringComparison.Ordinal);
+        Assert.Contains("get_ClearColorEnabled()", sourceCode, StringComparison.Ordinal);
+        Assert.Contains("get_ClearColor()", sourceCode, StringComparison.Ordinal);
+        Assert.DoesNotContain("GxmRenderer->BeginFrame(CornflowerBlue);", sourceCode, StringComparison.Ordinal);
     }
 }

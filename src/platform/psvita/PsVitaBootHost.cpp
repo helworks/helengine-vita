@@ -1,5 +1,7 @@
 #include "platform/psvita/PsVitaBootHost.hpp"
 
+#include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <malloc.h>
@@ -8,7 +10,10 @@
 
 #if HELENGINE_PSVITA_HAS_GENERATED_CORE
 #include "Core.hpp"
+#include "CameraClearSettings.hpp"
 #include "CoreInitializationOptions.hpp"
+#include "ICamera.hpp"
+#include "ObjectManager.hpp"
 #include "PlatformInfo.hpp"
 #include "RuntimeSceneLoadService.hpp"
 #include "SceneManager.hpp"
@@ -296,7 +301,7 @@ namespace helengine::psvita {
         AppendBootTrace("RunMainLoop: first update");
         EngineCore->Update(FrameDeltaSeconds);
         AppendBootTrace("RunMainLoop: first begin frame");
-        GxmRenderer->BeginFrame(CornflowerBlue);
+        GxmRenderer->BeginFrame(ResolveActiveCameraClearColorAbgr());
         AppendBootTrace("RunMainLoop: first commit pending");
         if (EngineCore->get_SceneManager() != nullptr) {
             EngineCore->get_SceneManager()->CommitPendingOperationsAtFrameBoundary();
@@ -313,11 +318,47 @@ namespace helengine::psvita {
 
         while (true) {
             EngineCore->Update(FrameDeltaSeconds);
-            GxmRenderer->BeginFrame(CornflowerBlue);
+            GxmRenderer->BeginFrame(ResolveActiveCameraClearColorAbgr());
             EngineCore->Draw();
             EngineRenderManager2D->Draw();
             PresentFrame();
         }
+    }
+
+    /// Resolves the clear color for the active runtime camera, falling back to the bootstrap color when none is authored.
+    unsigned int PsVitaBootHost::ResolveActiveCameraClearColorAbgr() {
+        if (EngineCore == nullptr || EngineCore->ObjectManager == nullptr) {
+            return CornflowerBlue;
+        }
+
+        List<::ICamera*>* cameras = EngineCore->ObjectManager->get_Cameras();
+        if (cameras == nullptr) {
+            return CornflowerBlue;
+        }
+
+        for (int32_t cameraIndex = 0; cameraIndex < cameras->get_Count(); cameraIndex++) {
+            ::ICamera* camera = (*cameras).get_Item(cameraIndex);
+            if (camera == nullptr) {
+                continue;
+            }
+
+            CameraClearSettings clearSettings = camera->get_ClearSettings();
+            if (!clearSettings.get_ClearColorEnabled()) {
+                continue;
+            }
+
+            float4 clearColor = clearSettings.get_ClearColor();
+            std::uint32_t red = static_cast<std::uint32_t>(std::lround(std::clamp(clearColor.X, 0.0f, 1.0f) * 255.0f));
+            std::uint32_t green = static_cast<std::uint32_t>(std::lround(std::clamp(clearColor.Y, 0.0f, 1.0f) * 255.0f));
+            std::uint32_t blue = static_cast<std::uint32_t>(std::lround(std::clamp(clearColor.Z, 0.0f, 1.0f) * 255.0f));
+            std::uint32_t alpha = static_cast<std::uint32_t>(std::lround(std::clamp(clearColor.W, 0.0f, 1.0f) * 255.0f));
+            return (alpha << 24)
+                | (blue << 16)
+                | (green << 8)
+                | red;
+        }
+
+        return CornflowerBlue;
     }
 #endif
 
