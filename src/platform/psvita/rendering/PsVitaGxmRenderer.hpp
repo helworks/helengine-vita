@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "platform/psvita/rendering/PsVitaQueuedQuad.hpp"
+#include "platform/psvita/rendering/PsVitaSolidColorVertex.hpp"
 
 namespace helengine::psvita::rendering {
     class PsVitaRuntimeTexture;
@@ -31,6 +32,9 @@ namespace helengine::psvita::rendering {
 
         /// Records one batch of textured quads for later native submission.
         void SubmitQuads(const std::vector<PsVitaQueuedQuad>& queuedQuads);
+
+        /// Records one batch of solid-color triangles for later native submission.
+        void SubmitSolidColorTriangles(const std::vector<PsVitaSolidColorVertex>& vertices);
 
         /// Presents the current frame through the PS Vita display path.
         void PresentFrame();

@@ -9,9 +9,13 @@ class IDrawable2D;
 
 #include "platform/psvita/rendering/PsVitaGxmRenderer.hpp"
 #include "platform/psvita/rendering/PsVitaQueuedQuad.hpp"
+#include "platform/psvita/rendering/PsVitaSolidColorVertex.hpp"
 #include "platform/psvita/rendering/PsVitaTextureCache.hpp"
 #include "IRenderVisitor2D.hpp"
 #include "RenderManager2D.hpp"
+#include "byte4.hpp"
+#include "float3.hpp"
+#include "int2.hpp"
 
 namespace helengine::psvita {
     /// Provides the temporary PS Vita 2D renderer bridge so the runtime can initialize before native rendering is implemented.
@@ -54,8 +58,52 @@ namespace helengine::psvita {
         void Visit(::IDrawable2D* drawable) override;
 
     private:
+        /// Appends one queued solid-color triangle to the current frame submission list.
+        void AppendSolidTriangle(
+            float x0,
+            float y0,
+            float x1,
+            float y1,
+            float x2,
+            float y2,
+            std::uint32_t colorAbgr,
+            std::uint8_t renderOrder);
+
+        /// Appends one queued solid-color quad as two triangles to the current frame submission list.
+        void AppendSolidQuad(
+            float left,
+            float top,
+            float right,
+            float bottom,
+            std::uint32_t colorAbgr,
+            std::uint8_t renderOrder);
+
+        /// Appends one filled rounded rectangle using solid-color triangles for the current menu pass.
+        void AppendFilledRoundedRect(
+            const float3& position,
+            const int2& size,
+            double radius,
+            std::uint32_t colorAbgr,
+            std::uint8_t renderOrder);
+
+        /// Appends one rounded-corner triangle fan using the supplied angle range.
+        void AppendRoundedCornerFan(
+            float centerX,
+            float centerY,
+            double radius,
+            double startAngleRadians,
+            double endAngleRadians,
+            std::uint32_t colorAbgr,
+            std::uint8_t renderOrder);
+
+        /// Packs one engine byte color into the ABGR layout expected by Vita2D.
+        static std::uint32_t PackColorAbgr(const byte4& color);
+
         /// Stores the native PS Vita GXM renderer that receives queued sprite batches.
         rendering::PsVitaGxmRenderer* GxmRenderer = nullptr;
+
+        /// Stores the queued solid-color rounded-rectangle triangles built during the current frame.
+        std::vector<rendering::PsVitaSolidColorVertex> QueuedSolidColorTriangles;
 
         /// Stores the queued sprite quads built during the current frame.
         std::vector<rendering::PsVitaQueuedQuad> QueuedQuads;

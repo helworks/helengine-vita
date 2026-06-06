@@ -15,6 +15,7 @@
 #include "ICamera.hpp"
 #include "IDrawable2D.hpp"
 #include "IRenderQueue2D.hpp"
+#include "IRoundedRectDrawable2D.hpp"
 #include "ISpriteDrawable2D.hpp"
 #include "ITextDrawable2D.hpp"
 #include "TextAlignment.hpp"
@@ -34,6 +35,7 @@
 namespace helengine::psvita {
     namespace {
         constexpr const char* BootTracePath = "ux0:/data/helengine_psvita_boot.log";
+        constexpr int RoundedCornerSegmentCount = 8;
 
         void AppendRenderTrace(const char* message) {
             if (message == nullptr) {
@@ -118,10 +120,13 @@ namespace helengine::psvita {
 
     /// Flushes one frame of queued PS Vita 2D commands through the native renderer foundation.
     void PsVitaRenderManager2D::Draw() {
-        if (QueuedQuads.empty()) {
+        if (QueuedSolidColorTriangles.empty() && QueuedQuads.empty()) {
             return;
         }
 
+        std::stable_sort(QueuedSolidColorTriangles.begin(), QueuedSolidColorTriangles.end(), [](const rendering::PsVitaSolidColorVertex& left, const rendering::PsVitaSolidColorVertex& right) {
+            return left.RenderOrder < right.RenderOrder;
+        });
         std::sort(QueuedQuads.begin(), QueuedQuads.end(), [](const rendering::PsVitaQueuedQuad& left, const rendering::PsVitaQueuedQuad& right) {
             if (left.RenderOrder != right.RenderOrder) {
                 return left.RenderOrder < right.RenderOrder;
@@ -131,9 +136,11 @@ namespace helengine::psvita {
         });
 
         if (GxmRenderer != nullptr) {
+            GxmRenderer->SubmitSolidColorTriangles(QueuedSolidColorTriangles);
             GxmRenderer->SubmitQuads(QueuedQuads);
         }
 
+        QueuedSolidColorTriangles.clear();
         QueuedQuads.clear();
     }
 
@@ -175,6 +182,60 @@ namespace helengine::psvita {
 
     /// Draws a rounded rectangle request.
     void PsVitaRenderManager2D::DrawRoundedRect(::IRoundedRectDrawable2D* shape) {
+        if (shape == nullptr) {
+            throw std::invalid_argument("PS Vita rounded-rectangle drawing requires one rounded-rectangle instance.");
+        } else if (shape->get_Parent() == nullptr) {
+            return;
+        }
+
+        int2 size = shape->get_Size();
+        if (size.X <= 0 || size.Y <= 0) {
+            return;
+        }
+
+        float3 position = shape->get_Parent()->get_Position();
+        std::uint8_t renderOrder = shape->get_RenderOrder2D();
+        int32_t borderThickness = std::max<int32_t>(0, static_cast<int32_t>(std::lround(shape->get_BorderThickness())));
+        double clampedRadius = std::max(
+            0.0,
+            std::min(
+                static_cast<double>(shape->get_Radius()),
+                std::min(static_cast<double>(size.X), static_cast<double>(size.Y)) * 0.5));
+
+        if (borderThickness > 0) {
+            AppendFilledRoundedRect(
+                position,
+                size,
+                clampedRadius,
+                PackColorAbgr(shape->get_BorderColor()),
+                renderOrder);
+        }
+
+        int2 innerSize(size.X - (borderThickness * 2), size.Y - (borderThickness * 2));
+        if (innerSize.X <= 0 || innerSize.Y <= 0) {
+            if (borderThickness <= 0) {
+                AppendFilledRoundedRect(
+                    position,
+                    size,
+                    clampedRadius,
+                    PackColorAbgr(shape->get_FillColor()),
+                    renderOrder);
+            }
+
+            return;
+        }
+
+        float3 innerPosition(
+            position.X + static_cast<float>(borderThickness),
+            position.Y + static_cast<float>(borderThickness),
+            position.Z);
+        double innerRadius = std::max(0.0, clampedRadius - static_cast<double>(borderThickness));
+        AppendFilledRoundedRect(
+            innerPosition,
+            innerSize,
+            innerRadius,
+            PackColorAbgr(shape->get_FillColor()),
+            renderOrder);
     }
 
     /// Draws a sprite request.
@@ -422,6 +483,153 @@ namespace helengine::psvita {
         }
 
         drawable->Draw();
+    }
+
+    /// Appends one queued solid-color triangle to the current frame submission list.
+    void PsVitaRenderManager2D::AppendSolidTriangle(
+        float x0,
+        float y0,
+        float x1,
+        float y1,
+        float x2,
+        float y2,
+        std::uint32_t colorAbgr,
+        std::uint8_t renderOrder) {
+        QueuedSolidColorTriangles.push_back(rendering::PsVitaSolidColorVertex {
+            x0,
+            y0,
+            colorAbgr,
+            renderOrder
+        });
+        QueuedSolidColorTriangles.push_back(rendering::PsVitaSolidColorVertex {
+            x1,
+            y1,
+            colorAbgr,
+            renderOrder
+        });
+        QueuedSolidColorTriangles.push_back(rendering::PsVitaSolidColorVertex {
+            x2,
+            y2,
+            colorAbgr,
+            renderOrder
+        });
+    }
+
+    /// Appends one queued solid-color quad as two triangles to the current frame submission list.
+    void PsVitaRenderManager2D::AppendSolidQuad(
+        float left,
+        float top,
+        float right,
+        float bottom,
+        std::uint32_t colorAbgr,
+        std::uint8_t renderOrder) {
+        if (right <= left || bottom <= top) {
+            return;
+        }
+
+        AppendSolidTriangle(left, top, right, top, left, bottom, colorAbgr, renderOrder);
+        AppendSolidTriangle(left, bottom, right, top, right, bottom, colorAbgr, renderOrder);
+    }
+
+    /// Appends one filled rounded rectangle using solid-color triangles for the current menu pass.
+    void PsVitaRenderManager2D::AppendFilledRoundedRect(
+        const float3& position,
+        const int2& size,
+        double radius,
+        std::uint32_t colorAbgr,
+        std::uint8_t renderOrder) {
+        if (size.X <= 0 || size.Y <= 0) {
+            return;
+        }
+
+        float left = position.X;
+        float top = position.Y;
+        float right = position.X + static_cast<float>(size.X);
+        float bottom = position.Y + static_cast<float>(size.Y);
+        double clampedRadius = std::max(
+            0.0,
+            std::min(
+                radius,
+                std::min(static_cast<double>(size.X), static_cast<double>(size.Y)) * 0.5));
+        if (clampedRadius <= 0.0) {
+            AppendSolidQuad(left, top, right, bottom, colorAbgr, renderOrder);
+            return;
+        }
+
+        float radiusPixels = static_cast<float>(clampedRadius);
+        AppendSolidQuad(left + radiusPixels, top, right - radiusPixels, bottom, colorAbgr, renderOrder);
+        AppendSolidQuad(left, top + radiusPixels, left + radiusPixels, bottom - radiusPixels, colorAbgr, renderOrder);
+        AppendSolidQuad(right - radiusPixels, top + radiusPixels, right, bottom - radiusPixels, colorAbgr, renderOrder);
+
+        AppendRoundedCornerFan(
+            left + radiusPixels,
+            top + radiusPixels,
+            clampedRadius,
+            3.14159265358979323846,
+            4.71238898038468985769,
+            colorAbgr,
+            renderOrder);
+        AppendRoundedCornerFan(
+            right - radiusPixels,
+            top + radiusPixels,
+            clampedRadius,
+            4.71238898038468985769,
+            6.28318530717958647692,
+            colorAbgr,
+            renderOrder);
+        AppendRoundedCornerFan(
+            right - radiusPixels,
+            bottom - radiusPixels,
+            clampedRadius,
+            0.0,
+            1.57079632679489661923,
+            colorAbgr,
+            renderOrder);
+        AppendRoundedCornerFan(
+            left + radiusPixels,
+            bottom - radiusPixels,
+            clampedRadius,
+            1.57079632679489661923,
+            3.14159265358979323846,
+            colorAbgr,
+            renderOrder);
+    }
+
+    /// Appends one rounded-corner triangle fan using the supplied angle range.
+    void PsVitaRenderManager2D::AppendRoundedCornerFan(
+        float centerX,
+        float centerY,
+        double radius,
+        double startAngleRadians,
+        double endAngleRadians,
+        std::uint32_t colorAbgr,
+        std::uint8_t renderOrder) {
+        if (radius <= 0.0) {
+            return;
+        }
+
+        double angleStep = (endAngleRadians - startAngleRadians) / static_cast<double>(RoundedCornerSegmentCount);
+        for (int segmentIndex = 0; segmentIndex < RoundedCornerSegmentCount; ++segmentIndex) {
+            double angle0 = startAngleRadians + (angleStep * static_cast<double>(segmentIndex));
+            double angle1 = startAngleRadians + (angleStep * static_cast<double>(segmentIndex + 1));
+            AppendSolidTriangle(
+                centerX,
+                centerY,
+                static_cast<float>(centerX + (std::cos(angle0) * radius)),
+                static_cast<float>(centerY + (std::sin(angle0) * radius)),
+                static_cast<float>(centerX + (std::cos(angle1) * radius)),
+                static_cast<float>(centerY + (std::sin(angle1) * radius)),
+                colorAbgr,
+                renderOrder);
+        }
+    }
+
+    /// Packs one engine byte color into the ABGR layout expected by Vita2D.
+    std::uint32_t PsVitaRenderManager2D::PackColorAbgr(const byte4& color) {
+        return (static_cast<std::uint32_t>(color.W) << 24)
+            | (static_cast<std::uint32_t>(color.Z) << 16)
+            | (static_cast<std::uint32_t>(color.Y) << 8)
+            | static_cast<std::uint32_t>(color.X);
     }
 }
 

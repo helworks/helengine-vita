@@ -135,4 +135,27 @@ public sealed class PsVitaGxmRenderPipelineSourceAuditTests {
         Assert.Contains("vita2d_texture*", gpuTextureHeaderSource, StringComparison.Ordinal);
         Assert.Contains("vita2d", cmakeSource, StringComparison.Ordinal);
     }
+
+    /// <summary>
+    /// Verifies the PS Vita runtime contains the solid-color rounded-rect renderer path needed by the current menu.
+    /// </summary>
+    [Fact]
+    public void Source_whenRenderingRoundedRectMenuPanels_containsSolidColorTrianglePath() {
+        string renderManagerHeaderPath = PsVitaRepositoryPathResolver.ResolvePath("src", "platform", "psvita", "rendering", "PsVitaRenderManager2D.hpp");
+        string renderManagerSourcePath = PsVitaRepositoryPathResolver.ResolvePath("src", "platform", "psvita", "rendering", "PsVitaRenderManager2D.cpp");
+        string gxmRendererHeaderPath = PsVitaRepositoryPathResolver.ResolvePath("src", "platform", "psvita", "rendering", "PsVitaGxmRenderer.hpp");
+        string gxmRendererSourcePath = PsVitaRepositoryPathResolver.ResolvePath("src", "platform", "psvita", "rendering", "PsVitaGxmRenderer.cpp");
+
+        string renderManagerHeaderSource = File.ReadAllText(renderManagerHeaderPath);
+        string renderManagerSource = File.ReadAllText(renderManagerSourcePath);
+        string gxmRendererHeaderSource = File.ReadAllText(gxmRendererHeaderPath);
+        string gxmRendererSource = File.ReadAllText(gxmRendererSourcePath);
+
+        Assert.Contains("std::vector<rendering::PsVitaSolidColorVertex>", renderManagerHeaderSource, StringComparison.Ordinal);
+        Assert.Contains("void SubmitSolidColorTriangles", gxmRendererHeaderSource, StringComparison.Ordinal);
+        Assert.Contains("DrawRoundedRect(::IRoundedRectDrawable2D* shape)", renderManagerSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("void PsVitaRenderManager2D::DrawRoundedRect(::IRoundedRectDrawable2D* shape) {\r\n    }", renderManagerSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("void PsVitaRenderManager2D::DrawRoundedRect(::IRoundedRectDrawable2D* shape) {\n    }", renderManagerSource, StringComparison.Ordinal);
+        Assert.Contains("vita2d_draw_array", gxmRendererSource, StringComparison.Ordinal);
+    }
 }
