@@ -110,6 +110,29 @@ namespace helengine::psvita::rendering {
         vita2d_draw_array(SCE_GXM_PRIMITIVE_TRIANGLES, drawVertices, static_cast<unsigned int>(vertices.size()));
     }
 
+    /// Records one batch of already projected 3D mesh triangles as solid white GPU geometry.
+    void PsVitaGxmRenderer::SubmitSolidWhiteMeshTriangles(const std::vector<::float3>& vertices) {
+        if (!Initialized || !FrameBegun || vertices.empty()) {
+            return;
+        }
+
+        vita2d_color_vertex* drawVertices = static_cast<vita2d_color_vertex*>(vita2d_pool_memalign(
+            static_cast<unsigned int>(sizeof(vita2d_color_vertex) * vertices.size()),
+            8u));
+        if (drawVertices == nullptr) {
+            throw std::runtime_error("PS Vita white-mesh submission failed to allocate transient GPU-visible vertex memory.");
+        }
+
+        for (std::size_t vertexIndex = 0; vertexIndex < vertices.size(); ++vertexIndex) {
+            drawVertices[vertexIndex].x = vertices[vertexIndex].X;
+            drawVertices[vertexIndex].y = vertices[vertexIndex].Y;
+            drawVertices[vertexIndex].z = vertices[vertexIndex].Z;
+            drawVertices[vertexIndex].color = 0xFFFFFFFFu;
+        }
+
+        vita2d_draw_array(SCE_GXM_PRIMITIVE_TRIANGLES, drawVertices, static_cast<unsigned int>(vertices.size()));
+    }
+
     /// Presents the current frame through the PS Vita display path.
     void PsVitaGxmRenderer::PresentFrame() {
         if (!Initialized || !FrameBegun) {

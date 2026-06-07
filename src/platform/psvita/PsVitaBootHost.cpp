@@ -249,6 +249,7 @@ namespace helengine::psvita {
 
         EngineRenderManager3D = new PsVitaRenderManager3D();
         EngineRenderManager2D = new PsVitaRenderManager2D();
+        static_cast<PsVitaRenderManager3D*>(EngineRenderManager3D)->SetGxmRenderer(GxmRenderer);
         static_cast<PsVitaRenderManager2D*>(EngineRenderManager2D)->SetGxmRenderer(GxmRenderer);
         EngineInputBackend = new PsVitaInputBackend();
         EnginePlatformInfo = new PlatformInfo("psvita", "1");

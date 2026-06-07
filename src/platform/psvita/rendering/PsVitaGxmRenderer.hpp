@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <vector>
 
+#include "helengine_float3.hpp"
 #include "platform/psvita/rendering/PsVitaQueuedQuad.hpp"
 #include "platform/psvita/rendering/PsVitaSolidColorVertex.hpp"
 
@@ -35,6 +36,9 @@ namespace helengine::psvita::rendering {
 
         /// Records one batch of solid-color triangles for later native submission.
         void SubmitSolidColorTriangles(const std::vector<PsVitaSolidColorVertex>& vertices);
+
+        /// Records one batch of already projected 3D mesh triangles as solid white GPU geometry.
+        void SubmitSolidWhiteMeshTriangles(const std::vector<::float3>& vertices);
 
         /// Presents the current frame through the PS Vita display path.
         void PresentFrame();

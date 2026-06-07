@@ -158,4 +158,21 @@ public sealed class PsVitaGxmRenderPipelineSourceAuditTests {
         Assert.DoesNotContain("void PsVitaRenderManager2D::DrawRoundedRect(::IRoundedRectDrawable2D* shape) {\n    }", renderManagerSource, StringComparison.Ordinal);
         Assert.Contains("vita2d_draw_array", gxmRendererSource, StringComparison.Ordinal);
     }
+
+    /// <summary>
+    /// Verifies the PS Vita GPU path exposes one dedicated white-triangle 3D submission surface for the first mesh-rendering pass.
+    /// </summary>
+    [Fact]
+    public void Source_whenSubmittingWhiteMeshTriangles_exposesDedicated3dGpuSubmissionPath() {
+        string gxmRendererHeaderPath = PsVitaRepositoryPathResolver.ResolvePath("src", "platform", "psvita", "rendering", "PsVitaGxmRenderer.hpp");
+        string gxmRendererSourcePath = PsVitaRepositoryPathResolver.ResolvePath("src", "platform", "psvita", "rendering", "PsVitaGxmRenderer.cpp");
+
+        string gxmRendererHeaderSource = File.ReadAllText(gxmRendererHeaderPath);
+        string gxmRendererSource = File.ReadAllText(gxmRendererSourcePath);
+
+        Assert.Contains("void SubmitSolidWhiteMeshTriangles", gxmRendererHeaderSource, StringComparison.Ordinal);
+        Assert.Contains("SubmitSolidWhiteMeshTriangles", gxmRendererSource, StringComparison.Ordinal);
+        Assert.Contains("0xFFFFFFFFu", gxmRendererSource, StringComparison.Ordinal);
+        Assert.Contains("vita2d_draw_array", gxmRendererSource, StringComparison.Ordinal);
+    }
 }

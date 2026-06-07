@@ -61,6 +61,8 @@ if(DEFINED HELENGINE_CORE_CPP_ROOT AND NOT HELENGINE_CORE_CPP_ROOT STREQUAL "")
         src/platform/psvita/rendering/PsVitaGxmRenderer.cpp
         src/platform/psvita/rendering/PsVitaRenderManager2D.cpp
         src/platform/psvita/rendering/PsVitaRenderManager3D.cpp
+        src/platform/psvita/rendering/PsVitaRuntimeModel.cpp
+        src/platform/psvita/rendering/PsVitaRuntimeSubmesh.cpp
         src/platform/psvita/rendering/PsVitaRuntimeTexture.cpp
         src/platform/psvita/rendering/PsVitaTextureCache.cpp
     )
@@ -87,11 +89,15 @@ target_include_directories(${PROJECT_NAME} PRIVATE
 if(DEFINED HELENGINE_CORE_CPP_ROOT AND NOT HELENGINE_CORE_CPP_ROOT STREQUAL "")
     target_compile_definitions(${PROJECT_NAME} PRIVATE HELENGINE_PSVITA_HAS_GENERATED_CORE=1)
     target_include_directories(${PROJECT_NAME} PRIVATE ${HELENGINE_CORE_CPP_ROOT})
+    target_compile_options(${PROJECT_NAME} PRIVATE
+        -include ${CMAKE_CURRENT_SOURCE_DIR}/src/platform/psvita/PsVitaGeneratedCoreCompatibility.hpp
+    )
 else()
     target_compile_definitions(${PROJECT_NAME} PRIVATE HELENGINE_PSVITA_HAS_GENERATED_CORE=0)
 endif()
 
 target_link_libraries(${PROJECT_NAME} PRIVATE
+    pthread
     vita2d
     SceAppMgr_stub
     SceCommonDialog_stub
