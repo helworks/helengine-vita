@@ -31,7 +31,13 @@ if (-not (Test-Path -LiteralPath $Vita3KPath -PathType Leaf)) {
     throw "Vita3K executable was not found at '$Vita3KPath'."
 }
 
+$RunningVita3KProcesses = @(Get-Process -Name 'Vita3K' -ErrorAction SilentlyContinue)
+if ($RunningVita3KProcesses.Count -gt 0) {
+    $RunningVita3KProcesses | Stop-Process -Force
+}
+
 $DeletedInstalledTitle = $false
+# Unless -KeepInstalledTitle is passed, refresh the default installed title before launching the new VPK.
 if (-not $KeepInstalledTitle) {
     $DeleteOutput = & $Vita3KPath -d HLEN00001 2>&1
     $DeleteOutputText = ($DeleteOutput | Out-String).Trim()

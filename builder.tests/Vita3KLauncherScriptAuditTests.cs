@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using Xunit;
 
 namespace helengine.psvita.builder.tests;
 
@@ -48,5 +49,20 @@ public sealed class Vita3KLauncherScriptAuditTests {
         Assert.Contains("HLEN00001", scriptSource, StringComparison.Ordinal);
         Assert.Contains("-KeepInstalledTitle", scriptSource, StringComparison.Ordinal);
         Assert.Contains("-d", scriptSource, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Verifies the launcher force-stops existing Vita3K processes before it deletes the installed title or launches the new VPK.
+    /// </summary>
+    [Fact]
+    public void Script_whenLaunchingVita3K_forceStopsExistingProcessesBeforeRelaunch() {
+        string scriptPath = PsVitaRepositoryPathResolver.ResolvePath("tools", "launch-vita3k.ps1");
+        string scriptSource = File.ReadAllText(scriptPath);
+
+        Assert.Contains("Get-Process -Name 'Vita3K'", scriptSource, StringComparison.Ordinal);
+        Assert.Contains("Stop-Process -Force", scriptSource, StringComparison.Ordinal);
+        Assert.True(
+            scriptSource.IndexOf("Stop-Process -Force", StringComparison.Ordinal) < scriptSource.IndexOf("Start-Process -FilePath $Vita3KPath", StringComparison.Ordinal),
+            "The launcher must stop existing Vita3K processes before starting the new instance.");
     }
 }
