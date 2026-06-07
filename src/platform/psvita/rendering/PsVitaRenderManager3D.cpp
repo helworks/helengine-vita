@@ -453,7 +453,7 @@ namespace helengine::psvita {
 
         ::float3 cameraPosition = camera->get_Parent()->get_Position();
         ::float4 cameraOrientation = camera->get_Parent()->get_Orientation();
-        ::float3 cameraForward = float4::RotateVector(::float3(0.0f, 0.0f, 1.0f), cameraOrientation);
+        ::float3 cameraForward = float4::RotateVector(::float3(0.0f, 0.0f, -1.0f), cameraOrientation);
         ::float3 cameraUp = float4::RotateVector(::float3(0.0f, 1.0f, 0.0f), cameraOrientation);
         ::float3 cameraTarget = cameraPosition + cameraForward;
 

@@ -123,4 +123,29 @@ public sealed class PsVitaRenderManager3DSourceAuditTests {
         Assert.Contains("DrawRuntimeModel", sourceCode, StringComparison.Ordinal);
         Assert.Contains("SubmitSolidWhiteMeshTriangles", sourceCode, StringComparison.Ordinal);
     }
+
+    /// <summary>
+    /// Verifies the Vita camera path uses the same default forward basis as the engine's normal 3D renderers.
+    /// </summary>
+    [Fact]
+    public void Source_whenBuildingCameraViewProjection_usesEngineNegativeZForwardBasis() {
+        string sourcePath = PsVitaRepositoryPathResolver.ResolvePath("src", "platform", "psvita", "rendering", "PsVitaRenderManager3D.cpp");
+        string sourceCode = File.ReadAllText(sourcePath);
+
+        Assert.Contains("::float3 cameraForward = float4::RotateVector(::float3(0.0f, 0.0f, -1.0f), cameraOrientation);", sourceCode, StringComparison.Ordinal);
+        Assert.DoesNotContain("::float3 cameraForward = float4::RotateVector(::float3(0.0f, 0.0f, 1.0f), cameraOrientation);", sourceCode, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Verifies the Vita renderer keeps the same view-projection and world-view-projection composition order used by working engine renderers.
+    /// </summary>
+    [Fact]
+    public void Source_whenProjectingVitaMeshes_matchesEngineMatrixCompositionOrder() {
+        string sourcePath = PsVitaRepositoryPathResolver.ResolvePath("src", "platform", "psvita", "rendering", "PsVitaRenderManager3D.cpp");
+        string sourceCode = File.ReadAllText(sourcePath);
+
+        Assert.Contains("float4x4::Multiply__ref0_ref1_out2(view, projection, viewProjection);", sourceCode, StringComparison.Ordinal);
+        Assert.Contains("float4x4::Multiply__ref0_ref1_out2(world, ActiveViewProjection, worldViewProjection);", sourceCode, StringComparison.Ordinal);
+        Assert.Contains("CameraProjectionUtils::CreatePerspectiveProjection(", sourceCode, StringComparison.Ordinal);
+    }
 }
