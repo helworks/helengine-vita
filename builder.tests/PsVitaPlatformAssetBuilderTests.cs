@@ -116,6 +116,9 @@ public sealed class PsVitaPlatformAssetBuilderTests {
             Assert.True(report.Succeeded);
             Assert.Empty(diagnosticReporter.Diagnostics);
             Assert.True(nativeBuildExecutor.WasCalled);
+            Assert.Equal(
+                PsVitaRepositoryPathResolver.ResolveRepositoryRoot(),
+                nativeBuildExecutor.RepositoryRootPath);
             Assert.True(File.Exists(Path.Combine(outputRoot, "cooked", "scenes", "startup.hasset")));
             Assert.True(File.Exists(Path.Combine(nativeBuildExecutor.StagedContentRootPath, "scenes", "startup.hasset")));
             Assert.False(File.Exists(Path.Combine(nativeBuildExecutor.StagedContentRootPath, "cooked", "scenes", "startup.hasset")));
@@ -361,6 +364,111 @@ public sealed class PsVitaPlatformAssetBuilderTests {
     }
 
     /// <summary>
+    /// Verifies the Vita staging path rewrites generic cooked model payloads into the packed PS Vita model format before they reach the packaged content roots.
+    /// </summary>
+    [Fact]
+    public async Task BuildAsync_whenStagingModelPayloads_rewritesCookedModelIntoPackedVitaPayload() {
+        string workingRoot = Path.Combine(Path.GetTempPath(), "helengine-psvita-builder-tests-" + Guid.NewGuid().ToString("N"));
+        string outputRoot = Path.Combine(workingRoot, "out");
+        string sourceRoot = Path.Combine(workingRoot, "project");
+        string generatedCoreRoot = Path.Combine(workingRoot, "generated-core");
+        string sceneSourcePath = Path.Combine(sourceRoot, "cooked", "scenes", "startup.hasset");
+        string modelSourcePath = Path.Combine(sourceRoot, "cooked", "models", "cube.hasset");
+
+        Directory.CreateDirectory(Path.GetDirectoryName(sceneSourcePath));
+        Directory.CreateDirectory(Path.GetDirectoryName(modelSourcePath));
+        Directory.CreateDirectory(generatedCoreRoot);
+        File.WriteAllBytes(sceneSourcePath, CreateCookedSceneBytes());
+        File.WriteAllBytes(modelSourcePath, CreateCookedModelBytes());
+
+        string previousDirectory = Directory.GetCurrentDirectory();
+        try {
+            Directory.SetCurrentDirectory(sourceRoot);
+
+            PlatformBuildManifest manifest = new(
+                1,
+                "project",
+                "1.0.0",
+                "1.0.0",
+                "psvita",
+                "1.0.0",
+                "startup",
+                [
+                    new PlatformBuildScene(
+                        "startup",
+                        "Startup",
+                        "cooked/scenes/startup.hasset",
+                        [
+                            new PlatformBuildPayloadReference("cooked/scenes/startup.hasset", "cooked/scenes/startup.hasset"),
+                            new PlatformBuildPayloadReference("cooked/models/cube.hasset", "cooked/models/cube.hasset")
+                        ],
+                        [new KeyValuePair<string, string>("cooked-relative-path", "scenes/startup.hasset")])
+                ],
+                [],
+                [],
+                [],
+                [],
+                new PlatformContainerWritePlan(string.Empty, []));
+
+            PlatformBuildRequest request = new(
+                manifest,
+                [new PlatformBuildTargetVariant("psvita-default", "psvita", "psvita", "debug")],
+                [new PlatformCookProfile(
+                    "debug",
+                    "Debug",
+                    new PlatformCookProfileCapabilities(
+                        "psvita",
+                        "raw",
+                        "rgba",
+                        "psvita-scene-v1",
+                        PlatformSerializationEndianness.LittleEndian))],
+                outputRoot,
+                Path.Combine(workingRoot, "tmp"),
+                "debug",
+                "psvita-forward",
+                "default",
+                new Dictionary<string, string>(),
+                new Dictionary<string, string>(),
+                new Dictionary<string, string>(),
+                generatedCoreRoot,
+                "psvita-memory-card",
+                "vpk-package");
+
+            RecordingPsVitaNativeBuildExecutor nativeBuildExecutor = new();
+            PsVitaPlatformAssetBuilder builder = new(nativeBuildExecutor);
+            RecordingProgressReporter progressReporter = new();
+            RecordingDiagnosticReporter diagnosticReporter = new();
+
+            PlatformBuildReport report = await builder.BuildAsync(request, progressReporter, diagnosticReporter, CancellationToken.None);
+
+            Assert.True(report.Succeeded);
+            Assert.Empty(diagnosticReporter.Diagnostics);
+
+            string outputModelPath = Path.Combine(outputRoot, "cooked", "models", "cube.hasset");
+            string stagedModelPath = Path.Combine(nativeBuildExecutor.StagedContentRootPath, "models", "cube.hasset");
+            Assert.True(File.Exists(outputModelPath));
+            Assert.True(File.Exists(stagedModelPath));
+
+            byte[] outputModelBytes = File.ReadAllBytes(outputModelPath);
+            byte[] stagedModelBytes = File.ReadAllBytes(stagedModelPath);
+            Assert.True(PsVitaPackedModelAssetBinarySerializer.HasMagicPrefix(outputModelBytes));
+            Assert.True(PsVitaPackedModelAssetBinarySerializer.HasMagicPrefix(stagedModelBytes));
+
+            PsVitaPackedModelAsset packedModel = PsVitaPackedModelAssetBinarySerializer.DeserializeFromBytes(outputModelBytes);
+            Assert.Equal(2, packedModel.IndexElementSizeBytes);
+            PsVitaPackedModelSubmesh packedSubmesh = Assert.Single(packedModel.Submeshes);
+            Assert.Equal(0, packedSubmesh.IndexStart);
+            Assert.Equal(3, packedSubmesh.IndexCount);
+            Assert.Equal([0u, 1u, 2u], packedSubmesh.TriangleIndices);
+        } finally {
+            Directory.SetCurrentDirectory(previousDirectory);
+            if (Directory.Exists(workingRoot)) {
+                Directory.Delete(workingRoot, true);
+            }
+        }
+    }
+
+    /// <summary>
     /// Creates one minimal cooked scene payload that contains the supplied serialized component type identifiers.
     /// </summary>
     /// <param name="componentTypeIds">Serialized component type identifiers to include beneath one root entity.</param>
@@ -386,6 +494,26 @@ public sealed class PsVitaPlatformAssetBuilderTests {
             ]
         };
         return global::helengine.files.AssetSerializer.SerializeToBytes(sceneAsset);
+    }
+
+    /// <summary>
+    /// Creates one minimal cooked model payload that forces the Vita builder to resolve default submeshes and collapse 32-bit indices into the packed format.
+    /// </summary>
+    /// <returns>Cooked model bytes suitable for Vita staging tests.</returns>
+    static byte[] CreateCookedModelBytes() {
+        ModelAsset modelAsset = new() {
+            Positions = [
+                new float3(0f, 0f, 0f),
+                new float3(1f, 0f, 0f),
+                new float3(0f, 1f, 0f)
+            ],
+            BoundsMin = new float3(0f, 0f, 0f),
+            BoundsMax = new float3(1f, 1f, 0f),
+            Indices32 = [0u, 1u, 2u],
+            Submeshes = []
+        };
+
+        return global::helengine.files.AssetSerializer.SerializeToBytes(modelAsset);
     }
 
 }

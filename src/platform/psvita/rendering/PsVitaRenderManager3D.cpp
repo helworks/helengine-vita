@@ -31,6 +31,7 @@
 #include "ShaderMaterialAsset.hpp"
 #include "ShaderMaterialAssetBinarySerializer.hpp"
 #include "platform/psvita/rendering/PsVitaGxmRenderer.hpp"
+#include "platform/psvita/rendering/PsVitaPackedModelReader.hpp"
 #include "platform/psvita/rendering/PsVitaRenderManager2D.hpp"
 #include "platform/psvita/rendering/PsVitaRuntimeModel.hpp"
 #include "platform/psvita/rendering/PsVitaRuntimeSubmesh.hpp"
@@ -189,6 +190,11 @@ namespace helengine::psvita {
     ::RuntimeModel* PsVitaRenderManager3D::BuildModelFromCooked(std::string cookedAssetPath) {
         if (cookedAssetPath.empty()) {
             throw new ArgumentException("Cooked model asset path must be provided.", "cookedAssetPath");
+        }
+
+        ::RuntimeModel* packedRuntimeModel = rendering::PsVitaPackedModelReader::TryRead(cookedAssetPath);
+        if (packedRuntimeModel != nullptr) {
+            return packedRuntimeModel;
         }
 
         ::FileStream* stream = nullptr;

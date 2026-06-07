@@ -11,6 +11,8 @@ public sealed class PsVitaRenderManager3DSourceAuditTests {
     /// </summary>
     [Fact]
     public void Source_whenBuildingRuntimeModels_containsConcreteVitaRuntimeModelTypesAndBuildWiring() {
+        string packedModelReaderHeaderPath = PsVitaRepositoryPathResolver.ResolvePath("src", "platform", "psvita", "rendering", "PsVitaPackedModelReader.hpp");
+        string packedModelReaderSourcePath = PsVitaRepositoryPathResolver.ResolvePath("src", "platform", "psvita", "rendering", "PsVitaPackedModelReader.cpp");
         string runtimeModelHeaderPath = PsVitaRepositoryPathResolver.ResolvePath("src", "platform", "psvita", "rendering", "PsVitaRuntimeModel.hpp");
         string runtimeModelSourcePath = PsVitaRepositoryPathResolver.ResolvePath("src", "platform", "psvita", "rendering", "PsVitaRuntimeModel.cpp");
         string runtimeSubmeshHeaderPath = PsVitaRepositoryPathResolver.ResolvePath("src", "platform", "psvita", "rendering", "PsVitaRuntimeSubmesh.hpp");
@@ -18,10 +20,13 @@ public sealed class PsVitaRenderManager3DSourceAuditTests {
         string cmakePath = PsVitaRepositoryPathResolver.ResolvePath("CMakeLists.txt");
         string cmakeSource = File.ReadAllText(cmakePath);
 
+        Assert.True(File.Exists(packedModelReaderHeaderPath), "Expected one Vita packed model reader header.");
+        Assert.True(File.Exists(packedModelReaderSourcePath), "Expected one Vita packed model reader source file.");
         Assert.True(File.Exists(runtimeModelHeaderPath), "Expected one Vita runtime model header.");
         Assert.True(File.Exists(runtimeModelSourcePath), "Expected one Vita runtime model source file.");
         Assert.True(File.Exists(runtimeSubmeshHeaderPath), "Expected one Vita runtime submesh header.");
         Assert.True(File.Exists(runtimeSubmeshSourcePath), "Expected one Vita runtime submesh source file.");
+        Assert.Contains("PsVitaPackedModelReader.cpp", cmakeSource, StringComparison.Ordinal);
         Assert.Contains("PsVitaRuntimeModel.cpp", cmakeSource, StringComparison.Ordinal);
         Assert.Contains("PsVitaRuntimeSubmesh.cpp", cmakeSource, StringComparison.Ordinal);
     }
@@ -56,6 +61,9 @@ public sealed class PsVitaRenderManager3DSourceAuditTests {
         string sourceCode = File.ReadAllText(sourcePath);
 
         Assert.Contains("::RuntimeModel* BuildModelFromCooked(std::string cookedAssetPath) override;", headerSource, StringComparison.Ordinal);
+        Assert.Contains("#include \"platform/psvita/rendering/PsVitaPackedModelReader.hpp\"", sourceCode, StringComparison.Ordinal);
+        Assert.Contains("::RuntimeModel* packedRuntimeModel = rendering::PsVitaPackedModelReader::TryRead(cookedAssetPath);", sourceCode, StringComparison.Ordinal);
+        Assert.Contains("if (packedRuntimeModel != nullptr)", sourceCode, StringComparison.Ordinal);
         Assert.Contains("#include \"AssetSerializer.hpp\"", sourceCode, StringComparison.Ordinal);
         Assert.Contains("#include \"Asset.hpp\"", sourceCode, StringComparison.Ordinal);
         Assert.Contains("#include \"runtime/native_cast.hpp\"", sourceCode, StringComparison.Ordinal);

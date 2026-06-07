@@ -368,8 +368,9 @@ public sealed class PsVitaPlatformAssetBuilder : IPlatformAssetBuilder {
         }
 
         string relativePath = ResolveCookedRelativePath(sourceIdentity);
-        CopyFile(sourcePath, Path.Combine(outputRoot, relativePath));
-        CopyFile(sourcePath, Path.Combine(stagedContentRootPath, ResolveStagedContentRelativePath(relativePath)));
+        byte[] stagedPayloadBytes = ResolveStagedPayloadBytes(sourcePath);
+        WriteFile(stagedPayloadBytes, Path.Combine(outputRoot, relativePath));
+        WriteFile(stagedPayloadBytes, Path.Combine(stagedContentRootPath, ResolveStagedContentRelativePath(relativePath)));
         copied = true;
     }
 
@@ -391,17 +392,72 @@ public sealed class PsVitaPlatformAssetBuilder : IPlatformAssetBuilder {
     }
 
     /// <summary>
-    /// Copies one file and creates the destination directory if necessary.
+    /// Resolves the payload bytes that should be staged for one source asset.
     /// </summary>
-    /// <param name="sourcePath">Source file path.</param>
+    /// <param name="sourcePath">Source file path to inspect.</param>
+    /// <returns>Bytes that should be written into the Vita staged-content roots.</returns>
+    static byte[] ResolveStagedPayloadBytes(string sourcePath) {
+        if (string.IsNullOrWhiteSpace(sourcePath)) {
+            throw new ArgumentException("Source path must be provided.", nameof(sourcePath));
+        }
+
+        byte[] sourceBytes = File.ReadAllBytes(sourcePath);
+        if (TryPackModelPayload(sourceBytes, out byte[] packedModelBytes)) {
+            return packedModelBytes;
+        }
+
+        return sourceBytes;
+    }
+
+    /// <summary>
+    /// Attempts to convert one generic cooked model payload into the Vita packed-model format.
+    /// </summary>
+    /// <param name="sourceBytes">Source payload bytes to inspect.</param>
+    /// <param name="packedModelBytes">Packed Vita model bytes when the payload is a model asset.</param>
+    /// <returns><c>true</c> when the source payload was a generic cooked model that should be transformed for Vita staging.</returns>
+    static bool TryPackModelPayload(byte[] sourceBytes, out byte[] packedModelBytes) {
+        if (sourceBytes == null) {
+            throw new ArgumentNullException(nameof(sourceBytes));
+        }
+
+        packedModelBytes = Array.Empty<byte>();
+        if (PsVitaPackedModelAssetBinarySerializer.HasMagicPrefix(sourceBytes)) {
+            packedModelBytes = sourceBytes;
+            return true;
+        }
+
+        object asset;
+        try {
+            asset = global::helengine.files.AssetSerializer.DeserializeFromBytes(sourceBytes);
+        } catch {
+            return false;
+        }
+
+        ModelAsset modelAsset = asset as ModelAsset;
+        if (modelAsset == null) {
+            return false;
+        }
+
+        packedModelBytes = PsVitaPackedModelAssetBinarySerializer.SerializeModelAssetToBytes(modelAsset);
+        return true;
+    }
+
+    /// <summary>
+    /// Writes one file and creates the destination directory if necessary.
+    /// </summary>
+    /// <param name="bytes">Bytes to write.</param>
     /// <param name="destinationPath">Destination file path.</param>
-    static void CopyFile(string sourcePath, string destinationPath) {
+    static void WriteFile(byte[] bytes, string destinationPath) {
+        if (bytes == null) {
+            throw new ArgumentNullException(nameof(bytes));
+        }
+
         string destinationDirectory = Path.GetDirectoryName(destinationPath);
         if (!string.IsNullOrWhiteSpace(destinationDirectory)) {
             Directory.CreateDirectory(destinationDirectory);
         }
 
-        File.Copy(sourcePath, destinationPath, true);
+        File.WriteAllBytes(destinationPath, bytes);
     }
 
     /// <summary>
@@ -468,7 +524,12 @@ public sealed class PsVitaPlatformAssetBuilder : IPlatformAssetBuilder {
     static string ResolveRepositoryRoot() {
         string environmentRoot = Environment.GetEnvironmentVariable("HELENGINE_PSVITA_REPOSITORY_ROOT");
         if (!string.IsNullOrWhiteSpace(environmentRoot)) {
-            return Path.GetFullPath(environmentRoot);
+            string environmentRootPath = Path.GetFullPath(environmentRoot);
+            if (IsPsVitaRepositoryRoot(environmentRootPath)) {
+                return environmentRootPath;
+            }
+
+            throw new DirectoryNotFoundException($"The HELENGINE_PSVITA_REPOSITORY_ROOT path '{environmentRootPath}' does not point to a valid helengine-psvita checkout.");
         }
 
         string assemblyLocation = typeof(PsVitaPlatformAssetBuilder).Assembly.Location;
@@ -478,7 +539,31 @@ public sealed class PsVitaPlatformAssetBuilder : IPlatformAssetBuilder {
 
         string baseDirectory = Path.GetDirectoryName(assemblyLocation)
             ?? throw new InvalidOperationException($"Unable to resolve the PS Vita builder base directory from '{assemblyLocation}'.");
-        return Path.GetFullPath(Path.Combine(baseDirectory, "..", "..", "..", ".."));
+        DirectoryInfo candidateDirectory = new(baseDirectory);
+        while (candidateDirectory != null) {
+            if (IsPsVitaRepositoryRoot(candidateDirectory.FullName)) {
+                return candidateDirectory.FullName;
+            }
+
+            candidateDirectory = candidateDirectory.Parent;
+        }
+
+        throw new DirectoryNotFoundException($"Unable to locate the helengine-psvita repository root from builder assembly directory '{baseDirectory}'.");
+    }
+
+    /// <summary>
+    /// Verifies whether one directory contains the PS Vita repository markers required by the native builder.
+    /// </summary>
+    /// <param name="directoryPath">Directory path to validate.</param>
+    /// <returns><c>true</c> when the directory matches the expected PS Vita repository layout.</returns>
+    static bool IsPsVitaRepositoryRoot(string directoryPath) {
+        if (string.IsNullOrWhiteSpace(directoryPath)) {
+            return false;
+        }
+
+        return File.Exists(Path.Combine(directoryPath, "Dockerfile"))
+            && File.Exists(Path.Combine(directoryPath, "CMakeLists.txt"))
+            && File.Exists(Path.Combine(directoryPath, "src", "platform", "psvita", "PsVitaBootHost.hpp"));
     }
 
     /// <summary>
