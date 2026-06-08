@@ -59,6 +59,7 @@ if(DEFINED HELENGINE_CORE_CPP_ROOT AND NOT HELENGINE_CORE_CPP_ROOT STREQUAL "")
         src/platform/psvita/PsVitaRuntimeSceneCatalogFactory.cpp
         src/platform/psvita/rendering/PsVitaGpuTexture.cpp
         src/platform/psvita/rendering/PsVitaGxmRenderer.cpp
+        src/platform/psvita/rendering/PsVitaGxmSolidColorProgram.cpp
         src/platform/psvita/rendering/PsVitaPackedModelReader.cpp
         src/platform/psvita/rendering/PsVitaRenderManager2D.cpp
         src/platform/psvita/rendering/PsVitaRenderManager3D.cpp
@@ -108,6 +109,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     SceLibKernel_stub
     ScePgf_stub
     ScePvf_stub
+    SceShaccCg_stub
     SceSysmodule_stub
     SceTouch_stub
 )

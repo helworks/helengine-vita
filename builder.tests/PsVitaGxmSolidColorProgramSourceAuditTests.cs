@@ -28,6 +28,7 @@ public sealed class PsVitaGxmSolidColorProgramSourceAuditTests {
 
     /// <summary>
     /// Verifies the programmable PS Vita mesh path does not borrow vita2d shader globals or route 3D meshes through vita2d array overrides.
+    /// The temporary runtime-compile bridge may still borrow the active vita2d-owned GXM context until the renderer owns that state directly.
     /// </summary>
     [Fact]
     public void Source_whenUsingProgrammableVitaMeshPath_doesNotBorrowVita2dShaderGlobals() {
@@ -45,7 +46,6 @@ public sealed class PsVitaGxmSolidColorProgramSourceAuditTests {
         Assert.DoesNotContain("_vita2d_ortho_matrix", rendererSource, StringComparison.Ordinal);
         Assert.DoesNotContain("vita2d_draw_array(", drawSolidColorMeshSource, StringComparison.Ordinal);
 
-        Assert.DoesNotContain("_vita2d_context", sourceCode, StringComparison.Ordinal);
         Assert.DoesNotContain("_vita2d_colorVertexProgram", sourceCode, StringComparison.Ordinal);
         Assert.DoesNotContain("_vita2d_colorFragmentProgram", sourceCode, StringComparison.Ordinal);
         Assert.DoesNotContain("_vita2d_colorWvpParam", sourceCode, StringComparison.Ordinal);
@@ -53,20 +53,35 @@ public sealed class PsVitaGxmSolidColorProgramSourceAuditTests {
     }
 
     /// <summary>
-    /// Verifies the temporary solid-color mesh path has been reset to the explicit false-return placeholder until real compiled GXM programs are wired in.
+    /// Verifies the PS Vita solid-color mesh path compiles the shader at runtime and binds real GXM programs instead of keeping the old no-op placeholder body.
     /// </summary>
     [Fact]
-    public void Source_whenSolidColorMeshShaderPipelineIsNotImplemented_returnsFalsePlaceholder() {
-        string sourceCode = File.ReadAllText(GetRendererPath());
+    public void Source_whenSolidColorMeshShaderPipelineCompilesAtRuntime_usesShaccCgAndRealGxmBinding() {
+        string rendererSource = File.ReadAllText(GetRendererPath());
+        string wrapperSource = File.ReadAllText(PsVitaRepositoryPathResolver.ResolvePath("src", "platform", "psvita", "rendering", "PsVitaGxmSolidColorProgram.cpp"));
+        string drawSolidColorMeshSource = GetDrawSolidColorMeshSource();
 
-        Assert.Contains("DrawSolidColorMesh", sourceCode, StringComparison.Ordinal);
-        Assert.Contains("(void)worldViewProjection;", sourceCode, StringComparison.Ordinal);
-        Assert.Contains("(void)positions;", sourceCode, StringComparison.Ordinal);
-        Assert.Contains("(void)positionCount;", sourceCode, StringComparison.Ordinal);
-        Assert.Contains("(void)indices;", sourceCode, StringComparison.Ordinal);
-        Assert.Contains("(void)indexCount;", sourceCode, StringComparison.Ordinal);
-        Assert.Contains("(void)colorAbgr;", sourceCode, StringComparison.Ordinal);
-        Assert.Contains("return false;", sourceCode, StringComparison.Ordinal);
+        Assert.Contains("#include <psp2/shacccg.h>", wrapperSource, StringComparison.Ordinal);
+        Assert.Contains("sceKernelLoadStartModule", wrapperSource, StringComparison.Ordinal);
+        Assert.Contains("sceShaccCgInitializeCompileOptions", wrapperSource, StringComparison.Ordinal);
+        Assert.Contains("sceShaccCgCompileProgram", wrapperSource, StringComparison.Ordinal);
+        Assert.Contains("sceShaccCgDestroyCompileOutput", wrapperSource, StringComparison.Ordinal);
+        Assert.Contains("sceGxmShaderPatcherCreate", wrapperSource, StringComparison.Ordinal);
+        Assert.Contains("sceGxmShaderPatcherCreateVertexProgram", wrapperSource, StringComparison.Ordinal);
+        Assert.Contains("sceGxmShaderPatcherCreateFragmentProgram", wrapperSource, StringComparison.Ordinal);
+        Assert.Contains("sceGxmProgramFindParameterByName", wrapperSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("(void)worldViewProjection;", drawSolidColorMeshSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("(void)positions;", drawSolidColorMeshSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("(void)positionCount;", drawSolidColorMeshSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("(void)indices;", drawSolidColorMeshSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("(void)indexCount;", drawSolidColorMeshSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("(void)colorAbgr;", drawSolidColorMeshSource, StringComparison.Ordinal);
+        Assert.Contains("sceGxmSetVertexProgram", drawSolidColorMeshSource, StringComparison.Ordinal);
+        Assert.Contains("sceGxmSetFragmentProgram", drawSolidColorMeshSource, StringComparison.Ordinal);
+        Assert.Contains("sceGxmSetVertexStream", drawSolidColorMeshSource, StringComparison.Ordinal);
+        Assert.Contains("sceGxmDraw", drawSolidColorMeshSource, StringComparison.Ordinal);
+        Assert.Contains("return true;", drawSolidColorMeshSource, StringComparison.Ordinal);
+        Assert.Contains("UploadSolidColorWorldViewProjection", rendererSource, StringComparison.Ordinal);
     }
 
     /// <summary>

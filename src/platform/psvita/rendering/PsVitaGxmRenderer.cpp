@@ -1,5 +1,6 @@
 #include "platform/psvita/rendering/PsVitaGxmRenderer.hpp"
 
+#include <cstring>
 #include <memory>
 #include <stdexcept>
 
@@ -30,7 +31,11 @@ namespace helengine::psvita::rendering {
             return false;
         }
 
-        SolidColorProgram.Initialize();
+        if (!SolidColorProgram.Initialize()) {
+            vita2d_fini();
+            return false;
+        }
+
         Initialized = true;
         FrameBegun = false;
         SubmittedQuadCount = 0u;
@@ -143,13 +148,57 @@ namespace helengine::psvita::rendering {
         const std::uint32_t* indices,
         int32_t indexCount,
         std::uint32_t colorAbgr) {
-        (void)worldViewProjection;
-        (void)positions;
-        (void)positionCount;
-        (void)indices;
-        (void)indexCount;
-        (void)colorAbgr;
-        return false;
+        if (!Initialized
+            || !FrameBegun
+            || !SolidColorProgram.IsReady()
+            || positions == nullptr
+            || indices == nullptr
+            || positionCount <= 0
+            || indexCount <= 0) {
+            return false;
+        }
+
+        ::float3* gpuVisiblePositions = static_cast<::float3*>(vita2d_pool_memalign(
+            static_cast<unsigned int>(sizeof(::float3) * static_cast<std::size_t>(positionCount)),
+            8u));
+        if (gpuVisiblePositions == nullptr) {
+            throw std::runtime_error("PS Vita solid-color mesh submission failed to allocate transient GPU-visible vertex memory.");
+        }
+
+        std::uint32_t* gpuVisibleIndices = static_cast<std::uint32_t*>(vita2d_pool_memalign(
+            static_cast<unsigned int>(sizeof(std::uint32_t) * static_cast<std::size_t>(indexCount)),
+            8u));
+        if (gpuVisibleIndices == nullptr) {
+            throw std::runtime_error("PS Vita solid-color mesh submission failed to allocate transient GPU-visible index memory.");
+        }
+
+        std::memcpy(gpuVisiblePositions, positions, sizeof(::float3) * static_cast<std::size_t>(positionCount));
+        std::memcpy(gpuVisibleIndices, indices, sizeof(std::uint32_t) * static_cast<std::size_t>(indexCount));
+
+        SceGxmContext* context = SolidColorProgram.GetContext();
+        if (context == nullptr) {
+            return false;
+        }
+
+        sceGxmSetVertexProgram(context, SolidColorProgram.GetVertexProgram());
+        sceGxmSetFragmentProgram(context, SolidColorProgram.GetFragmentProgram());
+        UploadSolidColorWorldViewProjection(context, SolidColorProgram.GetWorldViewProjectionParameter(), worldViewProjection);
+        UploadSolidColorBaseColor(context, SolidColorProgram.GetBaseColorParameter(), colorAbgr);
+
+        if (sceGxmSetVertexStream(context, 0u, gpuVisiblePositions) < 0) {
+            throw std::runtime_error("PS Vita solid-color mesh submission failed to bind the runtime-compiled vertex stream.");
+        }
+
+        if (sceGxmDraw(
+            context,
+            SCE_GXM_PRIMITIVE_TRIANGLES,
+            SCE_GXM_INDEX_FORMAT_U32,
+            gpuVisibleIndices,
+            static_cast<unsigned int>(indexCount)) < 0) {
+            throw std::runtime_error("PS Vita solid-color mesh submission failed to draw the runtime-compiled indexed mesh.");
+        }
+
+        return true;
     }
 
     /// Presents the current frame through the PS Vita display path.
@@ -277,7 +326,7 @@ namespace helengine::psvita::rendering {
             colorAbgr);
     }
 
-    /// Uploads one world-view-projection matrix into the borrowed vita2d color shader uniform buffer.
+    /// Uploads one world-view-projection matrix into the runtime-compiled solid-color vertex shader uniform buffer.
     void PsVitaGxmRenderer::UploadSolidColorWorldViewProjection(
         SceGxmContext* context,
         const SceGxmProgramParameter* parameter,
@@ -298,6 +347,29 @@ namespace helengine::psvita::rendering {
             worldViewProjection.M41, worldViewProjection.M42, worldViewProjection.M43, worldViewProjection.M44
         };
         sceGxmSetUniformDataF(vertexDefaultUniformBuffer, parameter, 0u, 16u, matrixValues);
+    }
+
+    /// Uploads one packed ABGR solid color into the runtime-compiled solid-color fragment shader uniform buffer.
+    void PsVitaGxmRenderer::UploadSolidColorBaseColor(
+        SceGxmContext* context,
+        const SceGxmProgramParameter* parameter,
+        std::uint32_t colorAbgr) {
+        if (context == nullptr || parameter == nullptr) {
+            throw std::runtime_error("PS Vita solid-color mesh submission requires one valid GXM shader context and base-color parameter.");
+        }
+
+        void* fragmentDefaultUniformBuffer = nullptr;
+        if (sceGxmReserveFragmentDefaultUniformBuffer(context, &fragmentDefaultUniformBuffer) < 0 || fragmentDefaultUniformBuffer == nullptr) {
+            throw std::runtime_error("PS Vita solid-color mesh submission failed to reserve the default fragment uniform buffer.");
+        }
+
+        const float colorValues[4] = {
+            static_cast<float>(colorAbgr & 0xFFu) / 255.0f,
+            static_cast<float>((colorAbgr >> 8u) & 0xFFu) / 255.0f,
+            static_cast<float>((colorAbgr >> 16u) & 0xFFu) / 255.0f,
+            static_cast<float>((colorAbgr >> 24u) & 0xFFu) / 255.0f
+        };
+        sceGxmSetUniformDataF(fragmentDefaultUniformBuffer, parameter, 0u, 4u, colorValues);
     }
 }
 
