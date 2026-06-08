@@ -162,4 +162,16 @@ public sealed class PsVitaRenderManager3DSourceAuditTests {
         Assert.Contains("TryProjectToScreen(positions[triangleIndex1], worldViewProjection, ActiveViewport, projectedVertex1)", sourceCode, StringComparison.Ordinal);
         Assert.Contains("TryProjectToScreen(positions[triangleIndex2], worldViewProjection, ActiveViewport, projectedVertex2)", sourceCode, StringComparison.Ordinal);
     }
+
+    /// <summary>
+    /// Verifies the Vita 3D renderer is prepared to route runtime mesh submission through one direct solid-color GXM mesh path instead of the temporary projected triangle fallback.
+    /// </summary>
+    [Fact]
+    public void Source_whenRoutingCubeTestThroughProgrammableMeshPath_usesSolidColorMeshSubmission() {
+        string sourcePath = PsVitaRepositoryPathResolver.ResolvePath("src", "platform", "psvita", "rendering", "PsVitaRenderManager3D.cpp");
+        string sourceCode = File.ReadAllText(sourcePath);
+
+        Assert.Contains("DrawSolidColorMesh", sourceCode, StringComparison.Ordinal);
+        Assert.DoesNotContain("SubmitTriangleStrip", sourceCode, StringComparison.Ordinal);
+    }
 }
