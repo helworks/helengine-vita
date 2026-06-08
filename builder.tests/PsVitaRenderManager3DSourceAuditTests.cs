@@ -125,7 +125,7 @@ public sealed class PsVitaRenderManager3DSourceAuditTests {
     }
 
     /// <summary>
-    /// Verifies the Vita camera path uses the same default forward basis as the engine's normal 3D renderers.
+    /// Verifies the Vita camera path uses the authored forward basis that points runtime camera quaternions toward scene content on PS Vita.
     /// </summary>
     [Fact]
     public void Source_whenBuildingCameraViewProjection_usesEngineNegativeZForwardBasis() {
@@ -147,5 +147,19 @@ public sealed class PsVitaRenderManager3DSourceAuditTests {
         Assert.Contains("float4x4::Multiply__ref0_ref1_out2(view, projection, viewProjection);", sourceCode, StringComparison.Ordinal);
         Assert.Contains("float4x4::Multiply__ref0_ref1_out2(world, ActiveViewProjection, worldViewProjection);", sourceCode, StringComparison.Ordinal);
         Assert.Contains("CameraProjectionUtils::CreatePerspectiveProjection(", sourceCode, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Verifies the Vita CPU mesh projection path consumes the raw world-view-projection matrix produced by the runtime camera and entity transforms.
+    /// </summary>
+    [Fact]
+    public void Source_whenProjectingVitaMeshes_usesRawWorldViewProjection() {
+        string sourcePath = PsVitaRepositoryPathResolver.ResolvePath("src", "platform", "psvita", "rendering", "PsVitaRenderManager3D.cpp");
+        string sourceCode = File.ReadAllText(sourcePath);
+
+        Assert.DoesNotContain("float4x4::Transpose__ref0_out1(worldViewProjection, transposedWorldViewProjection);", sourceCode, StringComparison.Ordinal);
+        Assert.Contains("TryProjectToScreen(positions[triangleIndex0], worldViewProjection, ActiveViewport, projectedVertex0)", sourceCode, StringComparison.Ordinal);
+        Assert.Contains("TryProjectToScreen(positions[triangleIndex1], worldViewProjection, ActiveViewport, projectedVertex1)", sourceCode, StringComparison.Ordinal);
+        Assert.Contains("TryProjectToScreen(positions[triangleIndex2], worldViewProjection, ActiveViewport, projectedVertex2)", sourceCode, StringComparison.Ordinal);
     }
 }

@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <utility>
 #include <vector>
 
@@ -45,6 +46,11 @@ namespace {
     constexpr int PsVitaScreenHeight = 544;
     constexpr float PsVitaPerspectiveFieldOfViewRadians = 0.78539816339744831f;
     constexpr float PsVitaMinimumProjectedW = 0.0001f;
+    constexpr const char* PsVitaBootTracePath = "ux0:/data/helengine_psvita_boot.log";
+    int PsVitaCameraDiagnosticSamplesRemaining = 4;
+    bool PsVitaLoggedProjectionDiagnostics = false;
+    int PsVitaProjectionDiagnosticSamplesRemaining = 12;
+    unsigned int PsVitaLoggedMeshDiagnosticsCount = 0u;
 
     /// Stores one projected triangle and its average depth so the temporary white mesh pass can draw farther triangles first without a material/depth system.
     struct ProjectedTriangle final {
@@ -331,7 +337,12 @@ namespace helengine::psvita {
             return;
         }
 
+        std::size_t attemptedTriangleCount = 0u;
         std::vector<ProjectedTriangle> projectedTriangles;
+        ::float3 firstProjectedVertex0;
+        ::float3 firstProjectedVertex1;
+        ::float3 firstProjectedVertex2;
+        bool hasFirstProjectedTriangle = false;
         for (int32_t submeshIndex = 0; submeshIndex < submeshes->get_Length(); ++submeshIndex) {
             auto* submesh = dynamic_cast<rendering::PsVitaRuntimeSubmesh*>((*submeshes)[submeshIndex]);
             if (submesh == nullptr) {
@@ -340,6 +351,7 @@ namespace helengine::psvita {
 
             const std::vector<std::uint32_t>& triangleIndices = submesh->GetTriangleIndices();
             for (std::size_t index = 0; index + 2 < triangleIndices.size(); index += 3) {
+                attemptedTriangleCount++;
                 const std::uint32_t triangleIndex0 = triangleIndices[index];
                 const std::uint32_t triangleIndex1 = triangleIndices[index + 1];
                 const std::uint32_t triangleIndex2 = triangleIndices[index + 2];
@@ -356,6 +368,13 @@ namespace helengine::psvita {
                     continue;
                 }
 
+                if (!hasFirstProjectedTriangle) {
+                    firstProjectedVertex0 = projectedVertex0;
+                    firstProjectedVertex1 = projectedVertex1;
+                    firstProjectedVertex2 = projectedVertex2;
+                    hasFirstProjectedTriangle = true;
+                }
+
                 projectedTriangles.push_back(ProjectedTriangle {
                     projectedVertex0,
                     projectedVertex1,
@@ -363,6 +382,71 @@ namespace helengine::psvita {
                     (projectedVertex0.Z + projectedVertex1.Z + projectedVertex2.Z) / 3.0f
                 });
             }
+        }
+
+        if (PsVitaLoggedMeshDiagnosticsCount < 2u) {
+            std::FILE* file = std::fopen(PsVitaBootTracePath, "a");
+            if (file != nullptr) {
+                ::float3 meshCenter = meshComponent->get_Parent()->get_Position();
+                ::float3 cameraPosition;
+                ::float4 cameraOrientation;
+                ::float3 negativeZForward;
+                ::float3 positiveZForward;
+                float negativeZAlignment = 0.0f;
+                float positiveZAlignment = 0.0f;
+                if (ActiveCamera != nullptr && ActiveCamera->get_Parent() != nullptr) {
+                    cameraPosition = ActiveCamera->get_Parent()->get_Position();
+                    cameraOrientation = ActiveCamera->get_Parent()->get_Orientation();
+                    negativeZForward = float4::RotateVector(::float3(0.0f, 0.0f, -1.0f), cameraOrientation);
+                    positiveZForward = float4::RotateVector(::float3(0.0f, 0.0f, 1.0f), cameraOrientation);
+                    ::float3 toMesh = float3::Normalize(meshCenter - cameraPosition);
+                    negativeZAlignment = float3::Dot(negativeZForward, toMesh);
+                    positiveZAlignment = float3::Dot(positiveZForward, toMesh);
+                }
+                ::float3 projectedOrigin;
+                const bool projectedOriginVisible = TryProjectToScreen(::float3(0.0f, 0.0f, 0.0f), worldViewProjection, ActiveViewport, projectedOrigin);
+
+                char buffer[512];
+                std::snprintf(
+                    buffer,
+                    sizeof(buffer),
+                    "Render3DProjection: meshIndex=%u viewport=(%.2f,%.2f,%.2f,%.2f) meshCenter=(%.2f,%.2f,%.2f) camera=(%.2f,%.2f,%.2f) alignNegZ=%.4f alignPosZ=%.4f originVisible=%u originScreen=(%.2f,%.2f,%.4f) attempted=%u projected=%u queuedVertices=%u firstTriangle=(%.2f,%.2f,%.4f)|(%.2f,%.2f,%.4f)|(%.2f,%.2f,%.4f)",
+                    PsVitaLoggedMeshDiagnosticsCount,
+                    ActiveViewport.X,
+                    ActiveViewport.Y,
+                    ActiveViewport.Z,
+                    ActiveViewport.W,
+                    meshCenter.X,
+                    meshCenter.Y,
+                    meshCenter.Z,
+                    cameraPosition.X,
+                    cameraPosition.Y,
+                    cameraPosition.Z,
+                    negativeZAlignment,
+                    positiveZAlignment,
+                    projectedOriginVisible ? 1u : 0u,
+                    projectedOriginVisible ? projectedOrigin.X : -1.0f,
+                    projectedOriginVisible ? projectedOrigin.Y : -1.0f,
+                    projectedOriginVisible ? projectedOrigin.Z : -1.0f,
+                    static_cast<unsigned int>(attemptedTriangleCount),
+                    static_cast<unsigned int>(projectedTriangles.size()),
+                    static_cast<unsigned int>(projectedTriangles.size() * 3u),
+                    hasFirstProjectedTriangle ? firstProjectedVertex0.X : -1.0f,
+                    hasFirstProjectedTriangle ? firstProjectedVertex0.Y : -1.0f,
+                    hasFirstProjectedTriangle ? firstProjectedVertex0.Z : -1.0f,
+                    hasFirstProjectedTriangle ? firstProjectedVertex1.X : -1.0f,
+                    hasFirstProjectedTriangle ? firstProjectedVertex1.Y : -1.0f,
+                    hasFirstProjectedTriangle ? firstProjectedVertex1.Z : -1.0f,
+                    hasFirstProjectedTriangle ? firstProjectedVertex2.X : -1.0f,
+                    hasFirstProjectedTriangle ? firstProjectedVertex2.Y : -1.0f,
+                    hasFirstProjectedTriangle ? firstProjectedVertex2.Z : -1.0f);
+                std::fputs(buffer, file);
+                std::fputc('\n', file);
+                std::fclose(file);
+            }
+
+            PsVitaLoggedProjectionDiagnostics = true;
+            PsVitaLoggedMeshDiagnosticsCount++;
         }
 
         std::stable_sort(projectedTriangles.begin(), projectedTriangles.end(), [](const ProjectedTriangle& left, const ProjectedTriangle& right) {
@@ -467,6 +551,48 @@ namespace helengine::psvita {
 
         ::float4x4 viewProjection;
         float4x4::Multiply__ref0_ref1_out2(view, projection, viewProjection);
+        if (PsVitaCameraDiagnosticSamplesRemaining > 0) {
+            PsVitaCameraDiagnosticSamplesRemaining--;
+            std::FILE* file = std::fopen(PsVitaBootTracePath, "a");
+            if (file != nullptr) {
+                char buffer[768];
+                std::snprintf(
+                    buffer,
+                    sizeof(buffer),
+                    "Render3DCamera: position=(%.4f,%.4f,%.4f) forward=(%.4f,%.4f,%.4f) up=(%.4f,%.4f,%.4f) target=(%.4f,%.4f,%.4f) viewProjRow1=(%.4f,%.4f,%.4f,%.4f) viewProjRow2=(%.4f,%.4f,%.4f,%.4f) viewProjRow3=(%.4f,%.4f,%.4f,%.4f) viewProjRow4=(%.4f,%.4f,%.4f,%.4f)",
+                    cameraPosition.X,
+                    cameraPosition.Y,
+                    cameraPosition.Z,
+                    cameraForward.X,
+                    cameraForward.Y,
+                    cameraForward.Z,
+                    cameraUp.X,
+                    cameraUp.Y,
+                    cameraUp.Z,
+                    cameraTarget.X,
+                    cameraTarget.Y,
+                    cameraTarget.Z,
+                    viewProjection.M11,
+                    viewProjection.M12,
+                    viewProjection.M13,
+                    viewProjection.M14,
+                    viewProjection.M21,
+                    viewProjection.M22,
+                    viewProjection.M23,
+                    viewProjection.M24,
+                    viewProjection.M31,
+                    viewProjection.M32,
+                    viewProjection.M33,
+                    viewProjection.M34,
+                    viewProjection.M41,
+                    viewProjection.M42,
+                    viewProjection.M43,
+                    viewProjection.M44);
+                std::fputs(buffer, file);
+                std::fputc('\n', file);
+                std::fclose(file);
+            }
+        }
         return viewProjection;
     }
 
@@ -518,8 +644,32 @@ namespace helengine::psvita {
             + (point.Y * worldViewProjection.M24)
             + (point.Z * worldViewProjection.M34)
             + worldViewProjection.M44;
+        const bool shouldLogProjectionSample = PsVitaProjectionDiagnosticSamplesRemaining > 0;
+        if (shouldLogProjectionSample) {
+            PsVitaProjectionDiagnosticSamplesRemaining--;
+        }
 
         if (clipW <= PsVitaMinimumProjectedW) {
+            if (shouldLogProjectionSample) {
+                std::FILE* file = std::fopen(PsVitaBootTracePath, "a");
+                if (file != nullptr) {
+                    char buffer[512];
+                    std::snprintf(
+                        buffer,
+                        sizeof(buffer),
+                        "Render3DProjectionSample: reject=clipW point=(%.4f,%.4f,%.4f) clip=(%.4f,%.4f,%.4f,%.4f)",
+                        point.X,
+                        point.Y,
+                        point.Z,
+                        clipX,
+                        clipY,
+                        clipZ,
+                        clipW);
+                    std::fputs(buffer, file);
+                    std::fputc('\n', file);
+                    std::fclose(file);
+                }
+            }
             return false;
         }
 
@@ -528,12 +678,61 @@ namespace helengine::psvita {
         const float normalizedY = clipY * inverseW;
         const float normalizedZ = clipZ * inverseW;
         if (!std::isfinite(normalizedX) || !std::isfinite(normalizedY) || !std::isfinite(normalizedZ)) {
+            if (shouldLogProjectionSample) {
+                std::FILE* file = std::fopen(PsVitaBootTracePath, "a");
+                if (file != nullptr) {
+                    char buffer[512];
+                    std::snprintf(
+                        buffer,
+                        sizeof(buffer),
+                        "Render3DProjectionSample: reject=nonfinite point=(%.4f,%.4f,%.4f) clip=(%.4f,%.4f,%.4f,%.4f) ndc=(%.4f,%.4f,%.4f)",
+                        point.X,
+                        point.Y,
+                        point.Z,
+                        clipX,
+                        clipY,
+                        clipZ,
+                        clipW,
+                        normalizedX,
+                        normalizedY,
+                        normalizedZ);
+                    std::fputs(buffer, file);
+                    std::fputc('\n', file);
+                    std::fclose(file);
+                }
+            }
             return false;
         }
 
         projectedPoint.X = viewport.X + ((normalizedX + 1.0f) * 0.5f * viewport.Z);
         projectedPoint.Y = viewport.Y + ((1.0f - normalizedY) * 0.5f * viewport.W);
         projectedPoint.Z = std::clamp(normalizedZ, 0.0f, 1.0f);
+        if (shouldLogProjectionSample) {
+            std::FILE* file = std::fopen(PsVitaBootTracePath, "a");
+            if (file != nullptr) {
+                char buffer[512];
+                std::snprintf(
+                    buffer,
+                    sizeof(buffer),
+                    "Render3DProjectionSample: accept point=(%.4f,%.4f,%.4f) clip=(%.4f,%.4f,%.4f,%.4f) ndc=(%.4f,%.4f,%.4f) screen=(%.2f,%.2f,%.4f)",
+                    point.X,
+                    point.Y,
+                    point.Z,
+                    clipX,
+                    clipY,
+                    clipZ,
+                    clipW,
+                    normalizedX,
+                    normalizedY,
+                    normalizedZ,
+                    projectedPoint.X,
+                    projectedPoint.Y,
+                    projectedPoint.Z);
+                std::fputs(buffer, file);
+                std::fputc('\n', file);
+                std::fclose(file);
+            }
+        }
         return std::isfinite(projectedPoint.X) && std::isfinite(projectedPoint.Y);
     }
 }
