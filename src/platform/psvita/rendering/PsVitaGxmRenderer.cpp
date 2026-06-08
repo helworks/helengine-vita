@@ -1,9 +1,9 @@
 #include "platform/psvita/rendering/PsVitaGxmRenderer.hpp"
 
-#include <cstring>
 #include <memory>
 #include <stdexcept>
 
+#include <psp2/gxm.h>
 #include <vita2d.h>
 
 #include "platform/psvita/rendering/PsVitaGpuTexture.hpp"
@@ -30,6 +30,7 @@ namespace helengine::psvita::rendering {
             return false;
         }
 
+        SolidColorProgram.Initialize();
         Initialized = true;
         FrameBegun = false;
         SubmittedQuadCount = 0u;
@@ -49,6 +50,7 @@ namespace helengine::psvita::rendering {
 
         vita2d_wait_rendering_done();
         vita2d_fini();
+        SolidColorProgram.Reset();
         Initialized = false;
         FrameBegun = false;
         SubmittedQuadCount = 0u;
@@ -131,6 +133,23 @@ namespace helengine::psvita::rendering {
         }
 
         vita2d_draw_array(SCE_GXM_PRIMITIVE_TRIANGLES, drawVertices, static_cast<unsigned int>(vertices.size()));
+    }
+
+    /// Draws one indexed runtime mesh through the first programmable solid-color GXM path.
+    bool PsVitaGxmRenderer::DrawSolidColorMesh(
+        const ::float4x4& worldViewProjection,
+        const ::float3* positions,
+        int32_t positionCount,
+        const std::uint32_t* indices,
+        int32_t indexCount,
+        std::uint32_t colorAbgr) {
+        (void)worldViewProjection;
+        (void)positions;
+        (void)positionCount;
+        (void)indices;
+        (void)indexCount;
+        (void)colorAbgr;
+        return false;
     }
 
     /// Presents the current frame through the PS Vita display path.
@@ -256,6 +275,29 @@ namespace helengine::psvita::rendering {
             triangleVertices,
             6u,
             colorAbgr);
+    }
+
+    /// Uploads one world-view-projection matrix into the borrowed vita2d color shader uniform buffer.
+    void PsVitaGxmRenderer::UploadSolidColorWorldViewProjection(
+        SceGxmContext* context,
+        const SceGxmProgramParameter* parameter,
+        const ::float4x4& worldViewProjection) {
+        if (context == nullptr || parameter == nullptr) {
+            throw std::runtime_error("PS Vita solid-color mesh submission requires one valid GXM shader context and matrix parameter.");
+        }
+
+        void* vertexDefaultUniformBuffer = nullptr;
+        if (sceGxmReserveVertexDefaultUniformBuffer(context, &vertexDefaultUniformBuffer) < 0 || vertexDefaultUniformBuffer == nullptr) {
+            throw std::runtime_error("PS Vita solid-color mesh submission failed to reserve the default vertex uniform buffer.");
+        }
+
+        const float matrixValues[16] = {
+            worldViewProjection.M11, worldViewProjection.M12, worldViewProjection.M13, worldViewProjection.M14,
+            worldViewProjection.M21, worldViewProjection.M22, worldViewProjection.M23, worldViewProjection.M24,
+            worldViewProjection.M31, worldViewProjection.M32, worldViewProjection.M33, worldViewProjection.M34,
+            worldViewProjection.M41, worldViewProjection.M42, worldViewProjection.M43, worldViewProjection.M44
+        };
+        sceGxmSetUniformDataF(vertexDefaultUniformBuffer, parameter, 0u, 16u, matrixValues);
     }
 }
 
