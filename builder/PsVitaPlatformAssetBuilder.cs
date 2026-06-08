@@ -13,7 +13,7 @@ namespace helengine.psvita.builder;
 /// <summary>
 /// Implements the PS Vita platform asset builder contract consumed by the editor.
 /// </summary>
-public sealed class PsVitaPlatformAssetBuilder : IPlatformAssetBuilder {
+public sealed class PsVitaPlatformAssetBuilder : IPlatformAssetBuilder, IShaderBackendRegistryContributor {
     /// <summary>
     /// Stable material field identifier used for the authored base color.
     /// </summary>
@@ -40,6 +40,11 @@ public sealed class PsVitaPlatformAssetBuilder : IPlatformAssetBuilder {
     readonly PsVitaGeneratedRuntimeComponentSupportWriter GeneratedRuntimeComponentSupportWriter;
 
     /// <summary>
+    /// Shared shader backend contributor owned by the dynamically loaded PS Vita builder assembly.
+    /// </summary>
+    readonly PsVitaShaderBackendRegistration ShaderBackendRegistration;
+
+    /// <summary>
     /// Initializes the PS Vita builder with the default Docker-backed native build executor.
     /// </summary>
     public PsVitaPlatformAssetBuilder()
@@ -53,6 +58,7 @@ public sealed class PsVitaPlatformAssetBuilder : IPlatformAssetBuilder {
     public PsVitaPlatformAssetBuilder(IPsVitaNativeBuildExecutor nativeBuildExecutor) {
         NativeBuildExecutor = nativeBuildExecutor ?? throw new ArgumentNullException(nameof(nativeBuildExecutor));
         GeneratedRuntimeComponentSupportWriter = new PsVitaGeneratedRuntimeComponentSupportWriter();
+        ShaderBackendRegistration = new PsVitaShaderBackendRegistration();
         Descriptor = new PlatformBuilderDescriptor(
             "helengine.psvita.builder",
             "1.0.0",
@@ -74,6 +80,7 @@ public sealed class PsVitaPlatformAssetBuilder : IPlatformAssetBuilder {
         PsVitaGeneratedRuntimeComponentSupportWriter generatedRuntimeComponentSupportWriter) {
         NativeBuildExecutor = nativeBuildExecutor ?? throw new ArgumentNullException(nameof(nativeBuildExecutor));
         GeneratedRuntimeComponentSupportWriter = generatedRuntimeComponentSupportWriter ?? throw new ArgumentNullException(nameof(generatedRuntimeComponentSupportWriter));
+        ShaderBackendRegistration = new PsVitaShaderBackendRegistration();
         Descriptor = new PlatformBuilderDescriptor(
             "helengine.psvita.builder",
             "1.0.0",
@@ -94,6 +101,18 @@ public sealed class PsVitaPlatformAssetBuilder : IPlatformAssetBuilder {
     /// Gets the typed PS Vita platform definition exposed to the editor.
     /// </summary>
     public PlatformDefinition Definition { get; }
+
+    /// <summary>
+    /// Registers the PS Vita shader backend exposed by this dynamically loaded builder assembly.
+    /// </summary>
+    /// <param name="shaderBackendRegistry">Shared registry that should receive the PS Vita shader backend.</param>
+    public void RegisterShaderBackends(ShaderBackendRegistry shaderBackendRegistry) {
+        if (shaderBackendRegistry == null) {
+            throw new ArgumentNullException(nameof(shaderBackendRegistry));
+        }
+
+        ShaderBackendRegistration.Register(shaderBackendRegistry);
+    }
 
     /// <summary>
     /// Returns the builder-owned cooked material payload for one PS Vita material schema request.

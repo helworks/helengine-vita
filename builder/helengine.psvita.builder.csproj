@@ -12,7 +12,9 @@
 
   <ItemGroup>
     <ProjectReference Include="$(HelengineRoot)\engine\helengine.baseplatform\helengine.baseplatform.csproj" />
+    <ProjectReference Include="$(HelengineRoot)\engine\helengine.core\helengine.core.csproj" />
     <ProjectReference Include="$(HelengineRoot)\engine\helengine.editor\helengine.editor.csproj" />
+    <ProjectReference Include="$(HelengineRoot)\engine\helengine.shader\helengine.shader.csproj" />
     <ProjectReference Include="$(HelengineRoot)\engine\helengine.files\helengine.files.csproj" />
   </ItemGroup>
 
