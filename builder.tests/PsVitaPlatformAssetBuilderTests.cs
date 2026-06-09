@@ -370,6 +370,37 @@ public sealed class PsVitaPlatformAssetBuilderTests {
     }
 
     /// <summary>
+    /// Verifies the PS Vita builder rewrites shader-backed materials into one Vita-native cooked payload that keeps the referenced shader id.
+    /// </summary>
+    [Fact]
+    public void CookMaterial_whenShaderFieldsArePresent_returnsReferencedShaderAssetId() {
+        PsVitaPlatformAssetBuilder builder = new();
+
+        PlatformMaterialCookResult result = builder.CookMaterial(new PlatformMaterialCookRequest(
+            "materials/rendering/cube_test_solid.hasset",
+            "materials/rendering/cube_test_solid.hasset",
+            "psvita",
+            "debug",
+            "default",
+            "standard-shader",
+            new Dictionary<string, string> {
+                ["shader-asset-id"] = "ForwardSolidColorShader",
+                ["vertex-program"] = "ForwardSolidColorShader.vs",
+                ["pixel-program"] = "ForwardSolidColorShader.ps",
+                ["variant"] = "Mesh",
+                ["base-color"] = "#ffffffff"
+            }));
+
+        PsVitaCompiledShaderMaterialAsset materialAsset = new PsVitaCompiledShaderMaterialBinarySerializer().Deserialize(result.CookedMaterialBytes);
+        Assert.Equal("ForwardSolidColorShader", materialAsset.ShaderAssetId);
+        Assert.Equal("ForwardSolidColorShader.vs", materialAsset.VertexProgramName);
+        Assert.Equal("ForwardSolidColorShader.ps", materialAsset.PixelProgramName);
+        Assert.Equal("Mesh", materialAsset.VariantName);
+        Assert.Equal(0xFFFFFFFFu, materialAsset.BaseColorAbgr);
+        Assert.Equal(["ForwardSolidColorShader"], result.ReferencedShaderAssetIds);
+    }
+
+    /// <summary>
     /// Verifies the Vita staging path rewrites generic cooked model payloads into the packed PS Vita model format before they reach the packaged content roots.
     /// </summary>
     [Fact]

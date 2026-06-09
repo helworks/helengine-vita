@@ -25,6 +25,26 @@ public sealed class PsVitaPlatformAssetBuilder : IPlatformAssetBuilder, IShaderB
     const string TextureFieldId = "texture-id";
 
     /// <summary>
+    /// Stable material field identifier used for one shared shader asset reference.
+    /// </summary>
+    const string ShaderAssetIdFieldId = "shader-asset-id";
+
+    /// <summary>
+    /// Stable material field identifier used for one resolved vertex-program name.
+    /// </summary>
+    const string VertexProgramFieldId = "vertex-program";
+
+    /// <summary>
+    /// Stable material field identifier used for one resolved pixel-program name.
+    /// </summary>
+    const string PixelProgramFieldId = "pixel-program";
+
+    /// <summary>
+    /// Stable material field identifier used for one resolved shader variant name.
+    /// </summary>
+    const string VariantFieldId = "variant";
+
+    /// <summary>
     /// Constant-buffer name used for the authored base color payload.
     /// </summary>
     const string BaseColorBufferName = "BaseColorBuffer";
@@ -122,6 +142,23 @@ public sealed class PsVitaPlatformAssetBuilder : IPlatformAssetBuilder, IShaderB
     public PlatformMaterialCookResult CookMaterial(PlatformMaterialCookRequest request) {
         if (request == null) {
             throw new ArgumentNullException(nameof(request));
+        }
+
+        if (request.FieldValues.TryGetValue(ShaderAssetIdFieldId, out string shaderAssetId)
+            && !string.IsNullOrWhiteSpace(shaderAssetId)) {
+            PsVitaCompiledShaderMaterialAsset cookedAsset = new() {
+                ShaderAssetId = shaderAssetId,
+                VertexProgramName = GetRequiredFieldValue(request.FieldValues, VertexProgramFieldId),
+                PixelProgramName = GetRequiredFieldValue(request.FieldValues, PixelProgramFieldId),
+                VariantName = GetRequiredFieldValue(request.FieldValues, VariantFieldId),
+                BaseColorAbgr = ParseBaseColorAbgr(request.FieldValues.TryGetValue(BaseColorFieldId, out string authoredShaderBaseColor)
+                    ? authoredShaderBaseColor
+                    : "#ffffff")
+            };
+
+            return new PlatformMaterialCookResult(
+                new PsVitaCompiledShaderMaterialBinarySerializer().Serialize(cookedAsset),
+                [shaderAssetId]);
         }
 
         string baseColor = request.FieldValues.TryGetValue(BaseColorFieldId, out string authoredBaseColor)
@@ -639,8 +676,42 @@ public sealed class PsVitaPlatformAssetBuilder : IPlatformAssetBuilder, IShaderB
     /// <param name="serializedColor">Serialized color string in <c>#RRGGBB</c> or <c>#RRGGBBAA</c> form.</param>
     /// <returns>Normalized color value.</returns>
     static float4 ParseBaseColor(string serializedColor) {
+        ParseBaseColorChannels(serializedColor, out byte red, out byte green, out byte blue, out byte alpha);
+        return new float4(
+            red / 255f,
+            green / 255f,
+            blue / 255f,
+            alpha / 255f);
+    }
+
+    /// <summary>
+    /// Packs one serialized base-color string into little-endian ABGR8.
+    /// </summary>
+    /// <param name="serializedColor">Serialized color string in <c>#RRGGBB</c> or <c>#RRGGBBAA</c> form.</param>
+    /// <returns>Packed ABGR8 color value.</returns>
+    static uint ParseBaseColorAbgr(string serializedColor) {
+        ParseBaseColorChannels(serializedColor, out byte red, out byte green, out byte blue, out byte alpha);
+        return (uint)(alpha << 24)
+            | (uint)(blue << 16)
+            | (uint)(green << 8)
+            | red;
+    }
+
+    /// <summary>
+    /// Parses one serialized base-color string into byte channels.
+    /// </summary>
+    /// <param name="serializedColor">Serialized color string in <c>#RRGGBB</c> or <c>#RRGGBBAA</c> form.</param>
+    /// <param name="red">Resolved red channel.</param>
+    /// <param name="green">Resolved green channel.</param>
+    /// <param name="blue">Resolved blue channel.</param>
+    /// <param name="alpha">Resolved alpha channel.</param>
+    static void ParseBaseColorChannels(string serializedColor, out byte red, out byte green, out byte blue, out byte alpha) {
         if (string.IsNullOrWhiteSpace(serializedColor)) {
-            return new float4(1f, 1f, 1f, 1f);
+            red = 255;
+            green = 255;
+            blue = 255;
+            alpha = 255;
+            return;
         }
 
         string normalized = serializedColor.Trim();
@@ -653,21 +724,35 @@ public sealed class PsVitaPlatformAssetBuilder : IPlatformAssetBuilder, IShaderB
         }
 
         try {
-            byte red = Convert.ToByte(normalized.Substring(0, 2), 16);
-            byte green = Convert.ToByte(normalized.Substring(2, 2), 16);
-            byte blue = Convert.ToByte(normalized.Substring(4, 2), 16);
-            byte alpha = normalized.Length == 8
+            red = Convert.ToByte(normalized.Substring(0, 2), 16);
+            green = Convert.ToByte(normalized.Substring(2, 2), 16);
+            blue = Convert.ToByte(normalized.Substring(4, 2), 16);
+            alpha = normalized.Length == 8
                 ? Convert.ToByte(normalized.Substring(6, 2), 16)
                 : (byte)255;
-
-            return new float4(
-                red / 255f,
-                green / 255f,
-                blue / 255f,
-                alpha / 255f);
         } catch (FormatException ex) {
             throw new InvalidOperationException("Base color must use #RRGGBB or #RRGGBBAA.", ex);
         }
+    }
+
+    /// <summary>
+    /// Resolves one required material field value or throws when the value is missing.
+    /// </summary>
+    /// <param name="fieldValues">Material field values supplied by the editor build graph.</param>
+    /// <param name="fieldId">Field identifier that must be present.</param>
+    /// <returns>Resolved nonblank field value.</returns>
+    static string GetRequiredFieldValue(IReadOnlyDictionary<string, string> fieldValues, string fieldId) {
+        if (fieldValues == null) {
+            throw new ArgumentNullException(nameof(fieldValues));
+        } else if (string.IsNullOrWhiteSpace(fieldId)) {
+            throw new ArgumentException("Field id is required.", nameof(fieldId));
+        }
+
+        if (!fieldValues.TryGetValue(fieldId, out string fieldValue) || string.IsNullOrWhiteSpace(fieldValue)) {
+            throw new InvalidOperationException($"PS Vita shader-backed materials require the '{fieldId}' field.");
+        }
+
+        return fieldValue;
     }
 
     /// <summary>
