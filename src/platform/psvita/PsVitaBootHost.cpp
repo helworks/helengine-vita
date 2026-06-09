@@ -16,7 +16,6 @@
 #include "CoreInitializationOptions.hpp"
 #include "ICamera.hpp"
 #include "ObjectManager.hpp"
-#include "PlatformInfo.hpp"
 #include "RuntimeContentProcessorIds.hpp"
 #include "RuntimeSceneLoadService.hpp"
 #include "SceneAsset.hpp"
@@ -62,7 +61,6 @@ namespace helengine::psvita {
 #if HELENGINE_PSVITA_HAS_GENERATED_CORE
         , EngineCore(nullptr)
         , EngineOptions(nullptr)
-        , EnginePlatformInfo(nullptr)
         , EngineRenderManager3D(nullptr)
         , EngineRenderManager2D(nullptr)
         , EngineInputBackend(nullptr)
@@ -175,7 +173,6 @@ namespace helengine::psvita {
         EngineOptions->set_UpdateListInitialCapacity(64);
         EngineOptions->set_RenderList2DInitialCapacity(8);
         EngineOptions->set_RenderList3DInitialCapacity(64);
-        EnginePlatformInfo = new PlatformInfo("psvita", "01.00");
 
         EngineRenderManager3D = new PsVitaRenderManager3D();
         EngineRenderManager2D = new PsVitaRenderManager2D();
@@ -183,7 +180,7 @@ namespace helengine::psvita {
         static_cast<PsVitaRenderManager2D*>(EngineRenderManager2D)->SetGxmRenderer(GxmRenderer);
         EngineInputBackend = new PsVitaInputBackend();
         EngineRenderManager3D->AddWindow(0, ScreenWidth, ScreenHeight);
-        EngineCore->Initialize(EngineRenderManager3D, EngineRenderManager2D, EngineInputBackend, EnginePlatformInfo, EngineOptions);
+        EngineCore->Initialize(EngineRenderManager3D, EngineRenderManager2D, EngineInputBackend, EngineOptions);
         AppendBootTrace("InitializeCore: success");
     }
 

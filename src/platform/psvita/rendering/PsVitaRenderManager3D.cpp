@@ -124,7 +124,7 @@ namespace {
         const float farPlaneDistance = ClampFarPlaneDistance(nearPlaneDistance, PsVitaDefaultFarPlaneDistance);
 
         ::float4x4 projection;
-        float4x4::CreatePerspectiveFieldOfView__out4(fieldOfView, aspectRatio, nearPlaneDistance, farPlaneDistance, projection);
+        float4x4::CreatePerspectiveFieldOfView(fieldOfView, aspectRatio, nearPlaneDistance, farPlaneDistance, projection);
         return projection;
     }
 }
@@ -132,7 +132,7 @@ namespace {
 namespace helengine::psvita {
     /// Creates the PS Vita 3D renderer with the Vita display size.
     PsVitaRenderManager3D::PsVitaRenderManager3D() {
-        set_MainWindowSize(::int2(PsVitaScreenWidth, PsVitaScreenHeight));
+        set_MainWindowSize(new ::int2(PsVitaScreenWidth, PsVitaScreenHeight));
         ActiveViewport = ::float4(0.0f, 0.0f, static_cast<float>(PsVitaScreenWidth), static_cast<float>(PsVitaScreenHeight));
         ActiveViewProjection = ::float4x4::get_Identity();
     }
@@ -227,8 +227,6 @@ namespace helengine::psvita {
         auto* runtimeMaterial = new ::RuntimeMaterial();
         runtimeMaterial->set_Id(materialAsset->get_Id());
         runtimeMaterial->SetRenderState(materialAsset->RenderState);
-        runtimeMaterial->set_CastsShadows(materialAsset->CastsShadows);
-        runtimeMaterial->set_ReceivesShadows(materialAsset->ReceivesShadows);
         return runtimeMaterial;
     }
 
@@ -241,8 +239,6 @@ namespace helengine::psvita {
         runtimeMaterial->SetPixelProgramName(materialAsset.PixelProgramName);
         runtimeMaterial->SetVariantName(materialAsset.VariantName);
         runtimeMaterial->SetBaseColorAbgr(materialAsset.BaseColorAbgr);
-        runtimeMaterial->set_CastsShadows(false);
-        runtimeMaterial->set_ReceivesShadows(false);
         return runtimeMaterial;
     }
 
@@ -350,12 +346,16 @@ namespace helengine::psvita {
             return;
         }
 
-        ::int2 mainWindowSize = get_MainWindowSize();
+        ::int2* mainWindowSize = get_MainWindowSize();
+        if (mainWindowSize == nullptr) {
+            ActiveCamera = nullptr;
+            return;
+        }
         ActiveCamera = camera;
         ActiveViewport = ResolveViewport(
             camera->get_Viewport(),
-            static_cast<double>(mainWindowSize.X),
-            static_cast<double>(mainWindowSize.Y));
+            static_cast<double>(mainWindowSize->X),
+            static_cast<double>(mainWindowSize->Y));
         if (ActiveViewport.Z <= 0.0f || ActiveViewport.W <= 0.0f) {
             ActiveCamera = nullptr;
             return;
@@ -384,7 +384,7 @@ namespace helengine::psvita {
 
         ::float4x4 world = BuildWorldTransform(meshComponent->get_Parent());
         ::float4x4 worldViewProjection;
-        float4x4::Multiply__ref0_ref1_out2(world, ActiveViewProjection, worldViewProjection);
+        float4x4::Multiply(world, ActiveViewProjection, worldViewProjection);
 
         Array<rendering::PsVitaRuntimeSubmesh*>* submeshes = runtimeModel->get_Submeshes();
         if (submeshes == nullptr || submeshes->Length == 0) {
@@ -571,18 +571,12 @@ namespace helengine::psvita {
             return 0xFFFFFFFFu;
         }
 
-        Array<::RuntimeMaterial*>* materials = meshComponent->get_Materials();
-        if (materials == nullptr || materials->Length == 0) {
+        ::RuntimeMaterial* material = meshComponent->get_Material();
+        if (material == nullptr) {
             return 0xFFFFFFFFu;
         }
 
-        int32_t materialIndex = materials->Length == 1
-            ? 0
-            : std::clamp(submeshIndex, 0, materials->Length - 1);
-        rendering::PsVitaCompiledShaderRuntimeMaterial* compiledShaderMaterial = dynamic_cast<rendering::PsVitaCompiledShaderRuntimeMaterial*>((*materials)[materialIndex]);
-        if (compiledShaderMaterial == nullptr && materials->Length > 0) {
-            compiledShaderMaterial = dynamic_cast<rendering::PsVitaCompiledShaderRuntimeMaterial*>((*materials)[0]);
-        }
+        rendering::PsVitaCompiledShaderRuntimeMaterial* compiledShaderMaterial = dynamic_cast<rendering::PsVitaCompiledShaderRuntimeMaterial*>(material);
 
         return compiledShaderMaterial == nullptr
             ? 0xFFFFFFFFu
@@ -632,12 +626,12 @@ namespace helengine::psvita {
         ::float3 cameraTarget = cameraPosition + cameraForward;
 
         ::float4x4 view;
-        float4x4::CreateLookAt__ref0_ref1_ref2_out3(cameraPosition, cameraTarget, cameraUp, view);
+        float4x4::CreateLookAt(cameraPosition, cameraTarget, cameraUp, view);
 
         ::float4x4 projection = CreatePerspectiveProjection(PsVitaPerspectiveFieldOfViewRadians, viewport.Z / viewport.W);
 
         ::float4x4 viewProjection;
-        float4x4::Multiply__ref0_ref1_out2(view, projection, viewProjection);
+        float4x4::Multiply(view, projection, viewProjection);
         if (PsVitaCameraDiagnosticSamplesRemaining > 0) {
             PsVitaCameraDiagnosticSamplesRemaining--;
             std::FILE* file = std::fopen(PsVitaBootTracePath, "a");
@@ -691,21 +685,21 @@ namespace helengine::psvita {
 
         ::float4 orientation = entity->get_Orientation();
         ::float4x4 rotation;
-        float4x4::CreateFromQuaternion__ref0_out1(orientation, rotation);
+        float4x4::CreateFromQuaternion(orientation, rotation);
 
         ::float3 scale = entity->get_Scale();
         ::float4x4 size;
-        float4x4::CreateScale__out3(scale.X, scale.Y, scale.Z, size);
+        float4x4::CreateScale(scale.X, scale.Y, scale.Z, size);
 
         ::float4x4 rotationScale;
-        float4x4::Multiply__ref0_ref1_out2(rotation, size, rotationScale);
+        float4x4::Multiply(rotation, size, rotationScale);
 
         ::float3 position = entity->get_Position();
         ::float4x4 translation;
-        float4x4::CreateTranslation__ref0_out1(position, translation);
+        float4x4::CreateTranslation(position, translation);
 
         ::float4x4 world;
-        float4x4::Multiply__ref0_ref1_out2(rotationScale, translation, world);
+        float4x4::Multiply(rotationScale, translation, world);
         return world;
     }
 

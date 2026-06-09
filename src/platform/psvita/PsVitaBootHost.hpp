@@ -6,7 +6,6 @@
 class Core;
 class ICamera;
 class CoreInitializationOptions;
-class PlatformInfo;
 class RenderManager3D;
 class RenderManager2D;
 class IInputBackend;
@@ -70,9 +69,6 @@ namespace helengine::psvita {
 
         /// Stores the generated-core initialization options used during PS Vita runtime startup.
         ::CoreInitializationOptions* EngineOptions;
-
-        /// Stores the generated-core platform descriptor passed into Core initialization.
-        ::PlatformInfo* EnginePlatformInfo;
 
         /// Stores the temporary 3D backend passed into generated-core startup.
         ::RenderManager3D* EngineRenderManager3D;

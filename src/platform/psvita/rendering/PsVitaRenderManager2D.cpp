@@ -186,8 +186,8 @@ namespace helengine::psvita {
             return;
         }
 
-        ::int2 size = shape->get_Size();
-        if (size.X <= 0 || size.Y <= 0) {
+        ::int2* size = shape->get_Size();
+        if (size == nullptr || size->X <= 0 || size->Y <= 0) {
             return;
         }
 
@@ -198,23 +198,23 @@ namespace helengine::psvita {
             0.0,
             std::min(
                 static_cast<double>(shape->get_Radius()),
-                std::min(static_cast<double>(size.X), static_cast<double>(size.Y)) * 0.5));
+                std::min(static_cast<double>(size->X), static_cast<double>(size->Y)) * 0.5));
 
         if (borderThickness > 0) {
             AppendFilledRoundedRect(
                 position,
-                size,
+                *size,
                 clampedRadius,
                 PackColorAbgr(shape->get_BorderColor()),
                 renderOrder);
         }
 
-        ::int2 innerSize(size.X - (borderThickness * 2), size.Y - (borderThickness * 2));
+        ::int2 innerSize(size->X - (borderThickness * 2), size->Y - (borderThickness * 2));
         if (innerSize.X <= 0 || innerSize.Y <= 0) {
             if (borderThickness <= 0) {
                 AppendFilledRoundedRect(
                     position,
-                    size,
+                    *size,
                     clampedRadius,
                     PackColorAbgr(shape->get_FillColor()),
                     renderOrder);
@@ -249,9 +249,9 @@ namespace helengine::psvita {
             return;
         }
 
-        ::int2 spriteSizeValue = sprite->get_Size();
-        const int32_t spriteWidthPixels = spriteSizeValue.X;
-        const int32_t spriteHeightPixels = spriteSizeValue.Y;
+        ::int2* spriteSizeValue = sprite->get_Size();
+        const int32_t spriteWidthPixels = spriteSizeValue != nullptr ? spriteSizeValue->X : 0;
+        const int32_t spriteHeightPixels = spriteSizeValue != nullptr ? spriteSizeValue->Y : 0;
         double spriteWidth = spriteWidthPixels > 0
             ? static_cast<double>(spriteWidthPixels)
             : static_cast<double>(texture->get_Width());
@@ -335,9 +335,9 @@ namespace helengine::psvita {
         const double fontScale = 1.0;
         if (text->get_WrapText()) {
             int32_t maxWidth = 1;
-            ::int2 textSizeValue = text->get_Size();
-            if (textSizeValue.X > 0) {
-                maxWidth = std::max(static_cast<int32_t>(1), static_cast<int32_t>(std::round(static_cast<double>(textSizeValue.X) / fontScale)));
+            ::int2* textSizeValue = text->get_Size();
+            if (textSizeValue != nullptr && textSizeValue->X > 0) {
+                maxWidth = std::max(static_cast<int32_t>(1), static_cast<int32_t>(std::round(static_cast<double>(textSizeValue->X) / fontScale)));
             }
 
             content = TextLayoutUtils::WrapText(content, font, maxWidth);
@@ -389,9 +389,9 @@ namespace helengine::psvita {
         double baseX = static_cast<double>(position.X);
         double baseY = static_cast<double>(position.Y);
         double lineHeight = std::max(static_cast<double>(font->get_LineHeight()) * fontScale, 1.0);
-        ::int2 layoutSizeValue = text->get_Size();
-        double layoutWidth = layoutSizeValue.X > 0
-            ? static_cast<double>(layoutSizeValue.X)
+        ::int2* layoutSizeValue = text->get_Size();
+        double layoutWidth = layoutSizeValue != nullptr && layoutSizeValue->X > 0
+            ? static_cast<double>(layoutSizeValue->X)
             : 0.0;
         byte4 color = text->get_Color();
         std::uint32_t packedColor = (static_cast<std::uint32_t>(color.W) << 24)
