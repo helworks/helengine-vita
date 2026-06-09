@@ -39,6 +39,12 @@ public sealed class PsVitaPlatformAssetBuilderTests {
         Assert.Contains(builder.Definition.ComponentSupportRules, supportRule =>
             supportRule.ComponentTypeId == "helengine.meshcomponent" &&
             supportRule.SupportKind == PlatformComponentSupportKind.Transform);
+
+        string platformDefinitionFactoryPath = PsVitaRepositoryPathResolver.ResolvePath("builder", "PsVitaPlatformDefinitionFactory.cs");
+        string platformDefinitionFactorySource = File.ReadAllText(platformDefinitionFactoryPath);
+        Assert.Contains("PlatformCodegenSettingIds.AppContextBaseDirectoryMode", platformDefinitionFactorySource, StringComparison.Ordinal);
+        Assert.Contains("PlatformSettingKind.Choice", platformDefinitionFactorySource, StringComparison.Ordinal);
+        Assert.Contains("PlatformCodegenSettingIds.AppContextBaseDirectoryModeStaticDot", platformDefinitionFactorySource, StringComparison.Ordinal);
     }
 
     /// <summary>

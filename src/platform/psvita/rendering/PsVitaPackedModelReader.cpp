@@ -7,8 +7,6 @@
 #include <cstring>
 #include <vector>
 
-#include "ModelSubmeshAsset.hpp"
-#include "RuntimeSubmesh.hpp"
 #include "platform/psvita/rendering/PsVitaRuntimeModel.hpp"
 #include "platform/psvita/rendering/PsVitaRuntimeSubmesh.hpp"
 #include "runtime/native_exceptions.hpp"
@@ -99,8 +97,8 @@ namespace helengine::psvita::rendering {
                 positions.push_back(ReadFloat3(file));
             }
 
-            ::float3 boundsMin = ReadFloat3(file);
-            ::float3 boundsMax = ReadFloat3(file);
+            ReadFloat3(file);
+            ReadFloat3(file);
 
             const std::int32_t submeshCount = ReadValue<std::int32_t>(file);
             if (submeshCount < 0) {
@@ -108,9 +106,7 @@ namespace helengine::psvita::rendering {
             }
 
             auto* runtimeModel = new PsVitaRuntimeModel(std::move(positions));
-            runtimeModel->SetBounds(boundsMin, boundsMax);
-
-            auto* runtimeSubmeshes = new Array<::RuntimeSubmesh*>(submeshCount);
+            auto* runtimeSubmeshes = new Array<rendering::PsVitaRuntimeSubmesh*>(submeshCount);
             for (std::int32_t submeshIndex = 0; submeshIndex < submeshCount; ++submeshIndex) {
                 std::string materialSlotName = ReadString(file);
                 const std::int32_t indexStart = ReadValue<std::int32_t>(file);

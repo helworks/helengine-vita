@@ -55,7 +55,6 @@ if(DEFINED HELENGINE_CORE_CPP_ROOT AND NOT HELENGINE_CORE_CPP_ROOT STREQUAL "")
 
     list(APPEND HELENGINE_PSVITA_SOURCES
         src/platform/psvita/PsVitaInputBackend.cpp
-        src/platform/psvita/PsVitaRuntimeDiagnosticsProvider.cpp
         src/platform/psvita/PsVitaRuntimeSceneCatalogFactory.cpp
         src/platform/psvita/rendering/PsVitaGpuTexture.cpp
         src/platform/psvita/rendering/PsVitaGxmRenderer.cpp

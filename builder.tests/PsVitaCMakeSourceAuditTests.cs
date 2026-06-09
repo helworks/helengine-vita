@@ -18,4 +18,16 @@ public sealed class PsVitaCMakeSourceAuditTests {
         Assert.Contains("list(APPEND HELENGINE_PSVITA_VPK_FILE_ARGS", cmakeSource, StringComparison.Ordinal);
         Assert.Contains("${HELENGINE_PSVITA_VPK_FILE_ARGS}", cmakeSource, StringComparison.Ordinal);
     }
+
+    /// <summary>
+    /// Verifies the PS Vita link step pulls in pthread when the generated core uses the shared std::thread runtime surface.
+    /// </summary>
+    [Fact]
+    public void CMake_whenGeneratedCoreUsesStdThread_linksPthreadSupport() {
+        string cmakePath = PsVitaRepositoryPathResolver.ResolvePath("CMakeLists.txt");
+        string cmakeSource = File.ReadAllText(cmakePath);
+
+        Assert.Contains("target_link_libraries(${PROJECT_NAME} PRIVATE", cmakeSource, StringComparison.Ordinal);
+        Assert.Contains("pthread", cmakeSource, StringComparison.Ordinal);
+    }
 }

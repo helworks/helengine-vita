@@ -8,25 +8,24 @@
 class Entity;
 class ICamera;
 class IDrawable3D;
+class MaterialAsset;
 class MeshComponent;
 class ModelAsset;
-class PlatformMaterialAsset;
 class RuntimeMaterial;
 class RuntimeModel;
-class RuntimeSubmesh;
-class ShaderMaterialAsset;
 template<typename T>
 class Array;
 
 #include "IRenderVisitor3D.hpp"
 #include "RenderManager3D.hpp"
-#include "helengine_float3.hpp"
-#include "helengine_float4.hpp"
-#include "helengine_float4x4.hpp"
+#include "float3.hpp"
+#include "float4.hpp"
+#include "float4x4.hpp"
 
 namespace helengine::psvita::rendering {
     class PsVitaGxmRenderer;
     class PsVitaRuntimeModel;
+    class PsVitaRuntimeSubmesh;
 }
 
 namespace helengine::psvita {
@@ -43,13 +42,13 @@ namespace helengine::psvita {
         void Draw() override;
 
         /// Builds one concrete runtime material from one packaged cooked platform material asset.
-        ::RuntimeMaterial* BuildMaterialFromCooked(std::string cookedAssetPath) override;
+        ::RuntimeMaterial* BuildMaterialFromCooked(std::string cookedAssetPath);
 
-        /// Builds one concrete runtime material from one deserialized platform material asset.
-        ::RuntimeMaterial* BuildMaterialFromCooked(::PlatformMaterialAsset* materialAsset) override;
+        /// Builds one concrete runtime material from one deserialized material asset payload.
+        ::RuntimeMaterial* BuildMaterialFromCooked(::MaterialAsset* materialAsset);
 
         /// Builds one concrete PS Vita runtime model from one packaged cooked model asset.
-        ::RuntimeModel* BuildModelFromCooked(std::string cookedAssetPath) override;
+        ::RuntimeModel* BuildModelFromCooked(std::string cookedAssetPath);
 
         /// Builds one concrete PS Vita runtime model from raw data.
         ::RuntimeModel* BuildModelFromRaw(::ModelAsset* data) override;
@@ -64,11 +63,13 @@ namespace helengine::psvita {
         /// Draws one mesh component with one concrete PS Vita runtime model.
         void DrawRuntimeModel(::MeshComponent* meshComponent, rendering::PsVitaRuntimeModel* runtimeModel);
 
-        /// Builds one concrete runtime material from one deserialized shader material asset while ignoring shader-specific resources for the white-mesh pass.
-        ::RuntimeMaterial* BuildMaterialFromCooked(::ShaderMaterialAsset* materialAsset);
+        /// Attempts to draw one runtime model through the programmable solid-color GXM mesh path.
+        bool TryDrawRuntimeModelWithSolidColorPath(
+            const ::float4x4& worldViewProjection,
+            rendering::PsVitaRuntimeModel* runtimeModel);
 
         /// Copies one runtime submesh array from the raw model asset into PS Vita-owned submesh objects.
-        Array<::RuntimeSubmesh*>* BuildRuntimeSubmeshes(::ModelAsset* data, const std::vector<std::uint32_t>& resolvedIndices);
+        Array<rendering::PsVitaRuntimeSubmesh*>* BuildRuntimeSubmeshes(::ModelAsset* data, const std::vector<std::uint32_t>& resolvedIndices);
 
         /// Builds the shared camera view-projection matrix used by the current mesh pass.
         ::float4x4 BuildCameraViewProjection(::ICamera* camera, const ::float4& viewport) const;

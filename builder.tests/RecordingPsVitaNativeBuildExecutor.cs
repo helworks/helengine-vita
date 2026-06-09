@@ -13,6 +13,11 @@ sealed class RecordingPsVitaNativeBuildExecutor : IPsVitaNativeBuildExecutor {
     public bool WasCalled { get; private set; }
 
     /// <summary>
+    /// Gets the repository root that the builder passed into the native build executor.
+    /// </summary>
+    public string RepositoryRootPath { get; private set; }
+
+    /// <summary>
     /// Gets the generated-core root that the builder passed into the native build executor.
     /// </summary>
     public string GeneratedCoreRootPath { get; private set; }
@@ -33,6 +38,7 @@ sealed class RecordingPsVitaNativeBuildExecutor : IPsVitaNativeBuildExecutor {
     /// <returns>Path to the fake VPK artifact.</returns>
     public string Build(string repositoryRoot, string nativeBuildRoot, string generatedCoreCppRootPath, string stagedContentRootPath, CancellationToken cancellationToken) {
         WasCalled = true;
+        RepositoryRootPath = repositoryRoot;
         GeneratedCoreRootPath = generatedCoreCppRootPath;
         StagedContentRootPath = stagedContentRootPath;
         Assert.True(Directory.Exists(repositoryRoot));

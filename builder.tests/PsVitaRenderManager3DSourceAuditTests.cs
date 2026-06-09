@@ -60,7 +60,7 @@ public sealed class PsVitaRenderManager3DSourceAuditTests {
         string headerSource = File.ReadAllText(headerPath);
         string sourceCode = File.ReadAllText(sourcePath);
 
-        Assert.Contains("::RuntimeModel* BuildModelFromCooked(std::string cookedAssetPath) override;", headerSource, StringComparison.Ordinal);
+        Assert.Contains("::RuntimeModel* BuildModelFromCooked(std::string cookedAssetPath);", headerSource, StringComparison.Ordinal);
         Assert.Contains("#include \"platform/psvita/rendering/PsVitaPackedModelReader.hpp\"", sourceCode, StringComparison.Ordinal);
         Assert.Contains("::RuntimeModel* packedRuntimeModel = rendering::PsVitaPackedModelReader::TryRead(cookedAssetPath);", sourceCode, StringComparison.Ordinal);
         Assert.Contains("if (packedRuntimeModel != nullptr)", sourceCode, StringComparison.Ordinal);
@@ -77,7 +77,7 @@ public sealed class PsVitaRenderManager3DSourceAuditTests {
     }
 
     /// <summary>
-    /// Verifies the PS Vita 3D renderer can rebuild one cooked material payload by deserializing the packaged platform material asset and returning one concrete runtime material instance.
+    /// Verifies the PS Vita 3D renderer can rebuild one cooked material payload by deserializing the packaged material asset and returning one concrete runtime material instance.
     /// </summary>
     [Fact]
     public void Source_whenResolvingCookedPlatformOwnedMaterials_buildsConcreteRuntimeMaterial() {
@@ -86,22 +86,22 @@ public sealed class PsVitaRenderManager3DSourceAuditTests {
         string headerSource = File.ReadAllText(headerPath);
         string sourceCode = File.ReadAllText(sourcePath);
 
-        Assert.Contains("::RuntimeMaterial* BuildMaterialFromCooked(std::string cookedAssetPath) override;", headerSource, StringComparison.Ordinal);
-        Assert.Contains("::RuntimeMaterial* BuildMaterialFromCooked(::PlatformMaterialAsset* materialAsset) override;", headerSource, StringComparison.Ordinal);
+        Assert.Contains("::RuntimeMaterial* BuildMaterialFromCooked(std::string cookedAssetPath);", headerSource, StringComparison.Ordinal);
+        Assert.Contains("::RuntimeMaterial* BuildMaterialFromCooked(::MaterialAsset* materialAsset);", headerSource, StringComparison.Ordinal);
         Assert.Contains("#include \"EngineBinaryHeaderSerializer.hpp\"", sourceCode, StringComparison.Ordinal);
         Assert.Contains("#include \"EditorAssetBinarySerializer.hpp\"", sourceCode, StringComparison.Ordinal);
-        Assert.Contains("#include \"PlatformMaterialAsset.hpp\"", sourceCode, StringComparison.Ordinal);
-        Assert.Contains("#include \"ShaderMaterialAsset.hpp\"", sourceCode, StringComparison.Ordinal);
-        Assert.Contains("#include \"ShaderMaterialAssetBinarySerializer.hpp\"", sourceCode, StringComparison.Ordinal);
+        Assert.Contains("#include \"MaterialAsset.hpp\"", sourceCode, StringComparison.Ordinal);
         Assert.Contains("#include \"RuntimeMaterial.hpp\"", sourceCode, StringComparison.Ordinal);
         Assert.Contains("::EngineBinaryHeader* header = nullptr;", sourceCode, StringComparison.Ordinal);
         Assert.Contains("header = ::EngineBinaryHeaderSerializer::Read(stream);", sourceCode, StringComparison.Ordinal);
-        Assert.Contains("if (header->FormatId == ShaderMaterialAssetBinarySerializer::FormatId)", sourceCode, StringComparison.Ordinal);
-        Assert.Contains("::ShaderMaterialAsset* cookedShaderMaterialAsset = ::ShaderMaterialAssetBinarySerializer::Deserialize(stream, header);", sourceCode, StringComparison.Ordinal);
         Assert.Contains("asset = ::EditorAssetBinarySerializer::Deserialize(stream, header);", sourceCode, StringComparison.Ordinal);
-        Assert.Contains("::PlatformMaterialAsset* cookedMaterialAsset = he_cpp_try_cast<PlatformMaterialAsset>(asset);", sourceCode, StringComparison.Ordinal);
+        Assert.Contains("::MaterialAsset* cookedMaterialAsset = he_cpp_try_cast<MaterialAsset>(asset);", sourceCode, StringComparison.Ordinal);
         Assert.Contains("auto* runtimeMaterial = new ::RuntimeMaterial();", sourceCode, StringComparison.Ordinal);
         Assert.Contains("runtimeMaterial->set_Id(materialAsset->get_Id());", sourceCode, StringComparison.Ordinal);
+        Assert.Contains("runtimeMaterial->SetRenderState(materialAsset->RenderState);", sourceCode, StringComparison.Ordinal);
+        Assert.Contains("runtimeMaterial->set_CastsShadows(materialAsset->CastsShadows);", sourceCode, StringComparison.Ordinal);
+        Assert.Contains("runtimeMaterial->set_ReceivesShadows(materialAsset->ReceivesShadows);", sourceCode, StringComparison.Ordinal);
+        Assert.DoesNotContain("runtimeMaterial->ApplyConstantBufferDefaults(materialAsset->ConstantBuffers);", sourceCode, StringComparison.Ordinal);
         Assert.DoesNotContain("does not support opaque platform-owned cooked material creation", sourceCode, StringComparison.Ordinal);
     }
 
@@ -146,7 +146,9 @@ public sealed class PsVitaRenderManager3DSourceAuditTests {
 
         Assert.Contains("float4x4::Multiply__ref0_ref1_out2(view, projection, viewProjection);", sourceCode, StringComparison.Ordinal);
         Assert.Contains("float4x4::Multiply__ref0_ref1_out2(world, ActiveViewProjection, worldViewProjection);", sourceCode, StringComparison.Ordinal);
-        Assert.Contains("CameraProjectionUtils::CreatePerspectiveProjection(", sourceCode, StringComparison.Ordinal);
+        Assert.Contains("::float4x4 projection = CreatePerspectiveProjection(PsVitaPerspectiveFieldOfViewRadians, viewport.Z / viewport.W);", sourceCode, StringComparison.Ordinal);
+        Assert.DoesNotContain("#include \"CameraProjectionUtils.hpp\"", sourceCode, StringComparison.Ordinal);
+        Assert.DoesNotContain("#include \"CameraViewportResolver.hpp\"", sourceCode, StringComparison.Ordinal);
     }
 
     /// <summary>

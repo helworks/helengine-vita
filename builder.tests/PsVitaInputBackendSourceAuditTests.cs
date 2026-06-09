@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using Xunit;
 
 namespace helengine.psvita.builder.tests;
 

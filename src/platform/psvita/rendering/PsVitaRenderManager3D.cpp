@@ -10,8 +10,6 @@
 
 #include "Asset.hpp"
 #include "AssetSerializer.hpp"
-#include "CameraProjectionUtils.hpp"
-#include "CameraViewportResolver.hpp"
 #include "Core.hpp"
 #include "EditorAssetBinarySerializer.hpp"
 #include "EngineBinaryHeader.hpp"
@@ -19,18 +17,15 @@
 #include "Entity.hpp"
 #include "ICamera.hpp"
 #include "IRenderQueue3D.hpp"
+#include "MaterialAsset.hpp"
 #include "MaterialBlendMode.hpp"
 #include "MaterialCullMode.hpp"
 #include "MaterialRenderState.hpp"
 #include "MeshComponent.hpp"
 #include "ModelAsset.hpp"
 #include "ModelAssetIndexData.hpp"
-#include "ModelSubmeshAsset.hpp"
 #include "ObjectManager.hpp"
-#include "PlatformMaterialAsset.hpp"
 #include "RuntimeMaterial.hpp"
-#include "ShaderMaterialAsset.hpp"
-#include "ShaderMaterialAssetBinarySerializer.hpp"
 #include "platform/psvita/rendering/PsVitaGxmRenderer.hpp"
 #include "platform/psvita/rendering/PsVitaPackedModelReader.hpp"
 #include "platform/psvita/rendering/PsVitaRenderManager2D.hpp"
@@ -45,6 +40,10 @@ namespace {
     constexpr int PsVitaScreenWidth = 960;
     constexpr int PsVitaScreenHeight = 544;
     constexpr float PsVitaPerspectiveFieldOfViewRadians = 0.78539816339744831f;
+    constexpr float PsVitaMinimumNearPlaneDistance = 0.01f;
+    constexpr float PsVitaMinimumPlaneSeparation = 0.01f;
+    constexpr float PsVitaDefaultNearPlaneDistance = 0.1f;
+    constexpr float PsVitaDefaultFarPlaneDistance = 100.0f;
     constexpr float PsVitaMinimumProjectedW = 0.0001f;
     constexpr const char* PsVitaBootTracePath = "ux0:/data/helengine_psvita_boot.log";
     int PsVitaCameraDiagnosticSamplesRemaining = 4;
@@ -59,6 +58,73 @@ namespace {
         ::float3 Vertex2;
         float AverageDepth;
     };
+
+    /// Returns whether the authored normalized viewport uses stacked dual-screen vertical units.
+    bool UsesStackedDualScreenViewportUnits(const ::float4& viewport, double targetWidth, double targetHeight) {
+        const double expectedStackedHeight = targetWidth * 1.5d;
+        if (std::abs(targetHeight - expectedStackedHeight) > 0.5d) {
+            return false;
+        }
+
+        return viewport.Y >= 0.0f && (viewport.Y + viewport.W) <= 2.0f;
+    }
+
+    /// Resolves one authored viewport into pixel-space coordinates for the active PS Vita target.
+    ::float4 ResolveViewport(const ::float4& viewport, double targetWidth, double targetHeight) {
+        if (targetWidth <= 0.0) {
+            throw new ArgumentOutOfRangeException("targetWidth", "Target width must be greater than zero.");
+        }
+        if (targetHeight <= 0.0) {
+            throw new ArgumentOutOfRangeException("targetHeight", "Target height must be greater than zero.");
+        }
+
+        double offsetX = viewport.X;
+        double offsetY = viewport.Y;
+        double width = viewport.Z;
+        double height = viewport.W;
+        if (width <= 1.0 && height <= 1.0) {
+            offsetX *= targetWidth;
+            width *= targetWidth;
+            if (UsesStackedDualScreenViewportUnits(viewport, targetWidth, targetHeight)) {
+                const double screenHeight = targetHeight * 0.5d;
+                offsetY *= screenHeight;
+                height *= screenHeight;
+            } else {
+                offsetY *= targetHeight;
+                height *= targetHeight;
+            }
+        }
+
+        return ::float4(
+            static_cast<float>(offsetX),
+            static_cast<float>(offsetY),
+            static_cast<float>(width),
+            static_cast<float>(height));
+    }
+
+    /// Clamps one near clip plane for the temporary Vita perspective projection path.
+    float ClampNearPlaneDistance(float nearPlaneDistance, float farPlaneDistance) {
+        const float minimumFarPlaneDistance = std::max(PsVitaMinimumNearPlaneDistance + PsVitaMinimumPlaneSeparation, farPlaneDistance);
+        return std::min(
+            std::max(PsVitaMinimumNearPlaneDistance, nearPlaneDistance),
+            minimumFarPlaneDistance - PsVitaMinimumPlaneSeparation);
+    }
+
+    /// Clamps one far clip plane for the temporary Vita perspective projection path.
+    float ClampFarPlaneDistance(float nearPlaneDistance, float farPlaneDistance) {
+        const float minimumNearPlaneDistance = std::max(PsVitaMinimumNearPlaneDistance, nearPlaneDistance);
+        return std::max(minimumNearPlaneDistance + PsVitaMinimumPlaneSeparation, farPlaneDistance);
+    }
+
+    /// Builds the temporary Vita perspective projection until generated camera clip planes are surfaced in the native core.
+    ::float4x4 CreatePerspectiveProjection(float fieldOfView, float aspectRatio) {
+        const float nearPlaneDistance = ClampNearPlaneDistance(PsVitaDefaultNearPlaneDistance, PsVitaDefaultFarPlaneDistance);
+        const float farPlaneDistance = ClampFarPlaneDistance(nearPlaneDistance, PsVitaDefaultFarPlaneDistance);
+
+        ::float4x4 projection;
+        float4x4::CreatePerspectiveFieldOfView__out4(fieldOfView, aspectRatio, nearPlaneDistance, farPlaneDistance, projection);
+        return projection;
+    }
 }
 
 namespace helengine::psvita {
@@ -91,7 +157,7 @@ namespace helengine::psvita {
         }
 
         for (int32_t cameraIndex = 0; cameraIndex < cameras->get_Count(); cameraIndex++) {
-            ::ICamera* camera = (*cameras).get_Item(static_cast<int32_t>(cameraIndex));
+            ::ICamera* camera = (*cameras)[cameraIndex];
             if (camera == nullptr) {
                 continue;
             }
@@ -113,25 +179,14 @@ namespace helengine::psvita {
         try {
             stream = ::File::OpenRead(cookedAssetPath);
             header = ::EngineBinaryHeaderSerializer::Read(stream);
-            if (header->FormatId == ShaderMaterialAssetBinarySerializer::FormatId) {
-                ::ShaderMaterialAsset* cookedShaderMaterialAsset = ::ShaderMaterialAssetBinarySerializer::Deserialize(stream, header);
-                header = nullptr;
-                delete stream;
-                stream = nullptr;
-
-                ::RuntimeMaterial* runtimeMaterial = BuildMaterialFromCooked(cookedShaderMaterialAsset);
-                delete cookedShaderMaterialAsset;
-                return runtimeMaterial;
-            }
-
             asset = ::EditorAssetBinarySerializer::Deserialize(stream, header);
             header = nullptr;
             delete stream;
             stream = nullptr;
 
-            ::PlatformMaterialAsset* cookedMaterialAsset = he_cpp_try_cast<PlatformMaterialAsset>(asset);
+            ::MaterialAsset* cookedMaterialAsset = he_cpp_try_cast<MaterialAsset>(asset);
             if (cookedMaterialAsset == nullptr) {
-                throw new InvalidOperationException("PS Vita cooked material payloads must deserialize as PlatformMaterialAsset.");
+                throw new InvalidOperationException("PS Vita cooked material payloads must deserialize as MaterialAsset.");
             }
 
             ::RuntimeMaterial* runtimeMaterial = BuildMaterialFromCooked(cookedMaterialAsset);
@@ -153,34 +208,13 @@ namespace helengine::psvita {
         }
     }
 
-    /// Builds one concrete runtime material from one deserialized platform material asset.
-    ::RuntimeMaterial* PsVitaRenderManager3D::BuildMaterialFromCooked(::PlatformMaterialAsset* materialAsset) {
-        if (materialAsset == nullptr) {
-            throw new ArgumentNullException("materialAsset");
-        }
-
-        auto* runtimeMaterial = new ::RuntimeMaterial();
-        runtimeMaterial->set_Id(materialAsset->get_Id());
-        runtimeMaterial->set_LightingModel(materialAsset->Lit
-            ? RuntimeMaterialLightingModel::MetalRoughPbr
-            : RuntimeMaterialLightingModel::Unlit);
-        runtimeMaterial->get_RenderState()->set_CullMode(materialAsset->DoubleSided
-            ? MaterialCullMode::None
-            : MaterialCullMode::Back);
-        runtimeMaterial->get_RenderState()->set_BlendMode(materialAsset->BaseColorA < 255
-            ? MaterialBlendMode::AlphaBlend
-            : MaterialBlendMode::Opaque);
-        runtimeMaterial->get_RenderState()->set_DepthWriteEnabled(materialAsset->BaseColorA >= 255);
-        return runtimeMaterial;
-    }
-
-    /// Builds one concrete runtime material from one deserialized shader material asset while ignoring shader-specific resources for the white-mesh pass.
-    ::RuntimeMaterial* PsVitaRenderManager3D::BuildMaterialFromCooked(::ShaderMaterialAsset* materialAsset) {
+    /// Builds one concrete runtime material from one deserialized material asset payload.
+    ::RuntimeMaterial* PsVitaRenderManager3D::BuildMaterialFromCooked(::MaterialAsset* materialAsset) {
         if (materialAsset == nullptr) {
             throw new ArgumentNullException("materialAsset");
         }
         if (materialAsset->RenderState == nullptr) {
-            throw new InvalidOperationException("PS Vita shader-backed material payloads must include a render state.");
+            throw new InvalidOperationException("PS Vita cooked material payloads must include a render state.");
         }
 
         auto* runtimeMaterial = new ::RuntimeMaterial();
@@ -188,7 +222,6 @@ namespace helengine::psvita {
         runtimeMaterial->SetRenderState(materialAsset->RenderState);
         runtimeMaterial->set_CastsShadows(materialAsset->CastsShadows);
         runtimeMaterial->set_ReceivesShadows(materialAsset->ReceivesShadows);
-        runtimeMaterial->set_LightingModel(RuntimeMaterialLightingModel::MetalRoughPbr);
         return runtimeMaterial;
     }
 
@@ -237,13 +270,13 @@ namespace helengine::psvita {
         if (data == nullptr) {
             throw new ArgumentNullException("data");
         }
-        if (data->Positions == nullptr || data->Positions->get_Length() == 0) {
+        if (data->Positions == nullptr || data->Positions->Length == 0) {
             throw new ArgumentException("Model data must include positions.");
         }
 
         std::vector<::float3> copiedPositions;
-        copiedPositions.reserve(static_cast<std::size_t>(data->Positions->get_Length()));
-        for (int32_t positionIndex = 0; positionIndex < data->Positions->get_Length(); ++positionIndex) {
+        copiedPositions.reserve(static_cast<std::size_t>(data->Positions->Length));
+        for (int32_t positionIndex = 0; positionIndex < data->Positions->Length; ++positionIndex) {
             copiedPositions.push_back((*data->Positions)[positionIndex]);
         }
 
@@ -251,18 +284,17 @@ namespace helengine::psvita {
         std::vector<std::uint32_t> resolvedIndices;
         resolvedIndices.reserve(static_cast<std::size_t>(std::max(0, indexData->IndexCount)));
         if (indexData->Uses32BitIndices && indexData->Indices32 != nullptr) {
-            for (int32_t index = 0; index < indexData->Indices32->get_Length(); ++index) {
+            for (int32_t index = 0; index < indexData->Indices32->Length; ++index) {
                 resolvedIndices.push_back((*indexData->Indices32)[index]);
             }
         } else if (indexData->Indices16 != nullptr) {
-            for (int32_t index = 0; index < indexData->Indices16->get_Length(); ++index) {
+            for (int32_t index = 0; index < indexData->Indices16->Length; ++index) {
                 resolvedIndices.push_back(static_cast<std::uint32_t>((*indexData->Indices16)[index]));
             }
         }
         delete indexData;
 
         auto* runtimeModel = new rendering::PsVitaRuntimeModel(std::move(copiedPositions));
-        runtimeModel->SetBounds(data->BoundsMin, data->BoundsMax);
         runtimeModel->SetSubmeshes(BuildRuntimeSubmeshes(data, resolvedIndices));
         return runtimeModel;
     }
@@ -297,11 +329,12 @@ namespace helengine::psvita {
             return;
         }
 
+        ::int2 mainWindowSize = get_MainWindowSize();
         ActiveCamera = camera;
-        ActiveViewport = CameraViewportResolver::ResolveViewport(
+        ActiveViewport = ResolveViewport(
             camera->get_Viewport(),
-            static_cast<double>(get_MainWindowSize().X),
-            static_cast<double>(get_MainWindowSize().Y));
+            static_cast<double>(mainWindowSize.X),
+            static_cast<double>(mainWindowSize.Y));
         if (ActiveViewport.Z <= 0.0f || ActiveViewport.W <= 0.0f) {
             ActiveCamera = nullptr;
             return;
@@ -332,8 +365,11 @@ namespace helengine::psvita {
         ::float4x4 worldViewProjection;
         float4x4::Multiply__ref0_ref1_out2(world, ActiveViewProjection, worldViewProjection);
 
-        Array<::RuntimeSubmesh*>* submeshes = runtimeModel->get_Submeshes();
-        if (submeshes == nullptr || submeshes->get_Length() == 0) {
+        Array<rendering::PsVitaRuntimeSubmesh*>* submeshes = runtimeModel->get_Submeshes();
+        if (submeshes == nullptr || submeshes->Length == 0) {
+            return;
+        }
+        if (TryDrawRuntimeModelWithSolidColorPath(worldViewProjection, runtimeModel)) {
             return;
         }
 
@@ -343,8 +379,8 @@ namespace helengine::psvita {
         ::float3 firstProjectedVertex1;
         ::float3 firstProjectedVertex2;
         bool hasFirstProjectedTriangle = false;
-        for (int32_t submeshIndex = 0; submeshIndex < submeshes->get_Length(); ++submeshIndex) {
-            auto* submesh = dynamic_cast<rendering::PsVitaRuntimeSubmesh*>((*submeshes)[submeshIndex]);
+        for (int32_t submeshIndex = 0; submeshIndex < submeshes->Length; ++submeshIndex) {
+            rendering::PsVitaRuntimeSubmesh* submesh = (*submeshes)[submeshIndex];
             if (submesh == nullptr) {
                 continue;
             }
@@ -460,69 +496,76 @@ namespace helengine::psvita {
         }
     }
 
+    /// Attempts to draw one runtime model through the programmable solid-color GXM mesh path.
+    bool PsVitaRenderManager3D::TryDrawRuntimeModelWithSolidColorPath(
+        const ::float4x4& worldViewProjection,
+        rendering::PsVitaRuntimeModel* runtimeModel) {
+        if (GxmRenderer == nullptr || runtimeModel == nullptr) {
+            return false;
+        }
+
+        const std::vector<::float3>& positions = runtimeModel->GetPositions();
+        if (positions.empty()) {
+            return false;
+        }
+
+        Array<rendering::PsVitaRuntimeSubmesh*>* submeshes = runtimeModel->get_Submeshes();
+        if (submeshes == nullptr || submeshes->Length == 0) {
+            return false;
+        }
+
+        bool drewAnySubmesh = false;
+        for (int32_t submeshIndex = 0; submeshIndex < submeshes->Length; ++submeshIndex) {
+            rendering::PsVitaRuntimeSubmesh* submesh = (*submeshes)[submeshIndex];
+            if (submesh == nullptr) {
+                return false;
+            }
+
+            const std::vector<std::uint32_t>& triangleIndices = submesh->GetTriangleIndices();
+            if (triangleIndices.empty()) {
+                continue;
+            }
+
+            if (!GxmRenderer->DrawSolidColorMesh(
+                worldViewProjection,
+                positions.data(),
+                static_cast<int32_t>(positions.size()),
+                triangleIndices.data(),
+                static_cast<int32_t>(triangleIndices.size()),
+                0xFFFFFFFFu)) {
+                return false;
+            }
+
+            drewAnySubmesh = true;
+        }
+
+        return drewAnySubmesh;
+    }
+
     /// Copies one runtime submesh array from the raw model asset into PS Vita-owned submesh objects.
-    Array<::RuntimeSubmesh*>* PsVitaRenderManager3D::BuildRuntimeSubmeshes(::ModelAsset* data, const std::vector<std::uint32_t>& resolvedIndices) {
+    Array<rendering::PsVitaRuntimeSubmesh*>* PsVitaRenderManager3D::BuildRuntimeSubmeshes(::ModelAsset* data, const std::vector<std::uint32_t>& resolvedIndices) {
         if (data == nullptr) {
             throw new ArgumentNullException("data");
         }
 
-        const int32_t positionCount = data->Positions == nullptr ? 0 : data->Positions->get_Length();
+        const int32_t positionCount = data->Positions == nullptr ? 0 : data->Positions->Length;
         const int32_t elementCount = resolvedIndices.empty() ? positionCount : static_cast<int32_t>(resolvedIndices.size());
-        if (data->Submeshes == nullptr || data->Submeshes->get_Length() == 0) {
-            if (elementCount == 0) {
-                return Array<::RuntimeSubmesh*>::Empty();
-            }
-
-            std::vector<std::uint32_t> defaultTriangleIndices;
-            defaultTriangleIndices.reserve(static_cast<std::size_t>(elementCount));
-            if (resolvedIndices.empty()) {
-                for (int32_t index = 0; index < elementCount; ++index) {
-                    defaultTriangleIndices.push_back(static_cast<std::uint32_t>(index));
-                }
-            } else {
-                defaultTriangleIndices = resolvedIndices;
-            }
-
-            auto* submeshes = new Array<::RuntimeSubmesh*>(1);
-            (*submeshes)[0] = new rendering::PsVitaRuntimeSubmesh(String::Empty, 0, elementCount, std::move(defaultTriangleIndices));
-            return submeshes;
+        if (elementCount == 0) {
+            return Array<rendering::PsVitaRuntimeSubmesh*>::Empty();
         }
 
-        auto* runtimeSubmeshes = new Array<::RuntimeSubmesh*>(data->Submeshes->get_Length());
-        for (int32_t submeshIndex = 0; submeshIndex < data->Submeshes->get_Length(); ++submeshIndex) {
-            ::ModelSubmeshAsset* authoredSubmesh = (*data->Submeshes)[submeshIndex];
-            if (authoredSubmesh == nullptr) {
-                throw new InvalidOperationException("Model submesh collections cannot contain null entries.");
+        std::vector<std::uint32_t> defaultTriangleIndices;
+        defaultTriangleIndices.reserve(static_cast<std::size_t>(elementCount));
+        if (resolvedIndices.empty()) {
+            for (int32_t index = 0; index < elementCount; ++index) {
+                defaultTriangleIndices.push_back(static_cast<std::uint32_t>(index));
             }
-            if (authoredSubmesh->IndexStart < 0) {
-                throw new InvalidOperationException("Model submesh index starts must be zero or greater.");
-            }
-            if (authoredSubmesh->IndexCount <= 0) {
-                throw new InvalidOperationException("Model submesh index counts must be greater than zero.");
-            }
-            if (authoredSubmesh->IndexStart + authoredSubmesh->IndexCount > elementCount) {
-                throw new InvalidOperationException("Model submesh ranges cannot exceed the resolved model element count.");
-            }
-
-            std::vector<std::uint32_t> triangleIndices;
-            triangleIndices.reserve(static_cast<std::size_t>(authoredSubmesh->IndexCount));
-            if (resolvedIndices.empty()) {
-                for (int32_t index = 0; index < authoredSubmesh->IndexCount; ++index) {
-                    triangleIndices.push_back(static_cast<std::uint32_t>(authoredSubmesh->IndexStart + index));
-                }
-            } else {
-                for (int32_t index = 0; index < authoredSubmesh->IndexCount; ++index) {
-                    triangleIndices.push_back(resolvedIndices[static_cast<std::size_t>(authoredSubmesh->IndexStart + index)]);
-                }
-            }
-
-            (*runtimeSubmeshes)[submeshIndex] = new rendering::PsVitaRuntimeSubmesh(
-                authoredSubmesh->get_MaterialSlotName(),
-                authoredSubmesh->IndexStart,
-                authoredSubmesh->IndexCount,
-                std::move(triangleIndices));
+        } else {
+            defaultTriangleIndices = resolvedIndices;
         }
 
+        auto* runtimeSubmeshes = new Array<rendering::PsVitaRuntimeSubmesh*>(1);
+        (*runtimeSubmeshes)[0] = new rendering::PsVitaRuntimeSubmesh(String::Empty, 0, elementCount, std::move(defaultTriangleIndices));
         return runtimeSubmeshes;
     }
 
@@ -544,10 +587,7 @@ namespace helengine::psvita {
         ::float4x4 view;
         float4x4::CreateLookAt__ref0_ref1_ref2_out3(cameraPosition, cameraTarget, cameraUp, view);
 
-        ::float4x4 projection = CameraProjectionUtils::CreatePerspectiveProjection(
-            camera,
-            PsVitaPerspectiveFieldOfViewRadians,
-            viewport.Z / viewport.W);
+        ::float4x4 projection = CreatePerspectiveProjection(PsVitaPerspectiveFieldOfViewRadians, viewport.Z / viewport.W);
 
         ::float4x4 viewProjection;
         float4x4::Multiply__ref0_ref1_out2(view, projection, viewProjection);

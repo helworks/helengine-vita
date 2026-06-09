@@ -6,8 +6,8 @@
 #include <cstdint>
 #include <vector>
 
-#include "helengine_float3.hpp"
-#include "helengine_float4x4.hpp"
+#include "float3.hpp"
+#include "float4x4.hpp"
 #include "platform/psvita/rendering/PsVitaGxmSolidColorProgram.hpp"
 #include "platform/psvita/rendering/PsVitaQueuedQuad.hpp"
 #include "platform/psvita/rendering/PsVitaSolidColorVertex.hpp"

@@ -22,7 +22,7 @@ namespace helengine::psvita {
     class PsVitaRenderManager2D final : public ::RenderManager2D, public ::IRenderVisitor2D {
     public:
         /// Builds a runtime texture from one packaged cooked texture asset.
-        ::RuntimeTexture* BuildTextureFromCooked(std::string cookedAssetPath) override;
+        ::RuntimeTexture* BuildTextureFromCooked(std::string cookedAssetPath);
 
         /// Builds a runtime texture from raw data.
         ::RuntimeTexture* BuildTextureFromRaw(::TextureAsset* data) override;
@@ -37,13 +37,13 @@ namespace helengine::psvita {
         void Draw() override;
 
         /// Releases one PS Vita runtime texture previously created by this renderer.
-        void ReleaseTexture(::RuntimeTexture* texture) override;
+        void ReleaseTexture(::RuntimeTexture* texture);
 
         /// Releases one PS Vita font asset and its native-owned object graph.
-        void ReleaseFont(::FontAsset* font) override;
+        void ReleaseFont(::FontAsset* font);
 
         /// Flushes deferred PS Vita runtime texture deletions once the renderer reaches a safe boundary before the next scene begins loading.
-        void FlushReleasedTextures() override;
+        void FlushReleasedTextures();
 
         /// Draws a rounded rectangle request.
         void DrawRoundedRect(::IRoundedRectDrawable2D* shape) override;
@@ -81,7 +81,7 @@ namespace helengine::psvita {
         /// Appends one filled rounded rectangle using solid-color triangles for the current menu pass.
         void AppendFilledRoundedRect(
             const float3& position,
-            const int2& size,
+            const ::int2& size,
             double radius,
             std::uint32_t colorAbgr,
             std::uint8_t renderOrder);

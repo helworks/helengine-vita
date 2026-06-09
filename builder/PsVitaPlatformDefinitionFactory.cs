@@ -164,7 +164,17 @@ public static class PsVitaPlatformDefinitionFactory {
                             PlatformSettingKind.Boolean,
                             "true",
                             true,
-                            [])
+                            []),
+                        new PlatformSettingDefinition(
+                            PlatformCodegenSettingIds.AppContextBaseDirectoryMode,
+                            "AppContext Base Directory Mode",
+                            PlatformSettingKind.Choice,
+                            PlatformCodegenSettingIds.AppContextBaseDirectoryModeStaticDot,
+                            true,
+                            [
+                                PlatformCodegenSettingIds.AppContextBaseDirectoryModeDynamicRuntime,
+                                PlatformCodegenSettingIds.AppContextBaseDirectoryModeStaticDot
+                            ])
                     ])
             ],
             [

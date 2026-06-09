@@ -6,11 +6,10 @@
 class Core;
 class ICamera;
 class CoreInitializationOptions;
+class PlatformInfo;
 class RenderManager3D;
 class RenderManager2D;
 class IInputBackend;
-class PlatformInfo;
-class IRuntimeDiagnosticsProvider;
 namespace helengine::psvita::rendering {
     class PsVitaGxmRenderer;
 }
@@ -27,6 +26,9 @@ namespace helengine::psvita {
         int Run();
 
     private:
+        /// Ensures the PS Vita data directory exists before boot tracing writes any files into it.
+        void EnsureBootTraceDirectoryExists();
+
         /// Clears the persisted Vita boot trace file before one new startup attempt.
         void ResetBootTrace();
 
@@ -69,6 +71,9 @@ namespace helengine::psvita {
         /// Stores the generated-core initialization options used during PS Vita runtime startup.
         ::CoreInitializationOptions* EngineOptions;
 
+        /// Stores the generated-core platform descriptor passed into Core initialization.
+        ::PlatformInfo* EnginePlatformInfo;
+
         /// Stores the temporary 3D backend passed into generated-core startup.
         ::RenderManager3D* EngineRenderManager3D;
 
@@ -77,12 +82,6 @@ namespace helengine::psvita {
 
         /// Stores the temporary input backend passed into generated-core startup.
         ::IInputBackend* EngineInputBackend;
-
-        /// Stores the runtime platform descriptor required by generated-core startup.
-        ::PlatformInfo* EnginePlatformInfo;
-
-        /// Stores the runtime diagnostics provider that streams generated-core scene/load stages into the Vita boot trace.
-        ::IRuntimeDiagnosticsProvider* EngineRuntimeDiagnosticsProvider;
 
         /// Stores the native PS Vita GXM renderer that owns generated-core frame submission and presentation.
         rendering::PsVitaGxmRenderer* GxmRenderer;

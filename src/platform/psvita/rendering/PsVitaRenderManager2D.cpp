@@ -18,7 +18,6 @@
 #include "IRoundedRectDrawable2D.hpp"
 #include "ISpriteDrawable2D.hpp"
 #include "ITextDrawable2D.hpp"
-#include "TextAlignment.hpp"
 #include "TextLayoutUtils.hpp"
 #include "byte4.hpp"
 #include "float3.hpp"
@@ -165,9 +164,8 @@ namespace helengine::psvita {
         }
 
         ::RuntimeTexture* texture = font->get_Texture();
-        if (texture != nullptr && !texture->get_IsDisposed()) {
+        if (texture != nullptr) {
             ReleaseTexture(texture);
-            texture->Dispose();
             delete texture;
         }
 
@@ -188,7 +186,7 @@ namespace helengine::psvita {
             return;
         }
 
-        int2 size = shape->get_Size();
+        ::int2 size = shape->get_Size();
         if (size.X <= 0 || size.Y <= 0) {
             return;
         }
@@ -211,7 +209,7 @@ namespace helengine::psvita {
                 renderOrder);
         }
 
-        int2 innerSize(size.X - (borderThickness * 2), size.Y - (borderThickness * 2));
+        ::int2 innerSize(size.X - (borderThickness * 2), size.Y - (borderThickness * 2));
         if (innerSize.X <= 0 || innerSize.Y <= 0) {
             if (borderThickness <= 0) {
                 AppendFilledRoundedRect(
@@ -251,12 +249,14 @@ namespace helengine::psvita {
             return;
         }
 
-        int2 spriteSize = sprite->get_Size();
-        double spriteWidth = spriteSize.X > 0
-            ? static_cast<double>(spriteSize.X)
+        ::int2 spriteSizeValue = sprite->get_Size();
+        const int32_t spriteWidthPixels = spriteSizeValue.X;
+        const int32_t spriteHeightPixels = spriteSizeValue.Y;
+        double spriteWidth = spriteWidthPixels > 0
+            ? static_cast<double>(spriteWidthPixels)
             : static_cast<double>(texture->get_Width());
-        double spriteHeight = spriteSize.Y > 0
-            ? static_cast<double>(spriteSize.Y)
+        double spriteHeight = spriteHeightPixels > 0
+            ? static_cast<double>(spriteHeightPixels)
             : static_cast<double>(texture->get_Height());
         if (spriteWidth <= 0.0 || spriteHeight <= 0.0) {
             return;
@@ -332,12 +332,12 @@ namespace helengine::psvita {
         }
 
         std::string content = text->get_Text();
-        double fontScale = std::max(static_cast<double>(text->get_FontScale()), 0.0001);
+        const double fontScale = 1.0;
         if (text->get_WrapText()) {
             int32_t maxWidth = 1;
-            int2 textSize = text->get_Size();
-            if (textSize.X > 0) {
-                maxWidth = std::max(static_cast<int32_t>(1), static_cast<int32_t>(std::round(static_cast<double>(textSize.X) / fontScale)));
+            ::int2 textSizeValue = text->get_Size();
+            if (textSizeValue.X > 0) {
+                maxWidth = std::max(static_cast<int32_t>(1), static_cast<int32_t>(std::round(static_cast<double>(textSizeValue.X) / fontScale)));
             }
 
             content = TextLayoutUtils::WrapText(content, font, maxWidth);
@@ -389,9 +389,9 @@ namespace helengine::psvita {
         double baseX = static_cast<double>(position.X);
         double baseY = static_cast<double>(position.Y);
         double lineHeight = std::max(static_cast<double>(font->get_LineHeight()) * fontScale, 1.0);
-        int2 layoutSize = text->get_Size();
-        double layoutWidth = layoutSize.X > 0
-            ? static_cast<double>(layoutSize.X)
+        ::int2 layoutSizeValue = text->get_Size();
+        double layoutWidth = layoutSizeValue.X > 0
+            ? static_cast<double>(layoutSizeValue.X)
             : 0.0;
         byte4 color = text->get_Color();
         std::uint32_t packedColor = (static_cast<std::uint32_t>(color.W) << 24)
@@ -403,18 +403,6 @@ namespace helengine::psvita {
             const std::string& line = lines[lineIndex];
             double offsetX = 0.0;
             double lineOffsetX = 0.0;
-            if (layoutWidth > 0.0) {
-                switch (text->get_Alignment()) {
-                case TextAlignment::Center:
-                    lineOffsetX = std::max(0.0, (layoutWidth - lineWidths[lineIndex]) * 0.5);
-                    break;
-                case TextAlignment::Right:
-                    lineOffsetX = std::max(0.0, layoutWidth - lineWidths[lineIndex]);
-                    break;
-                default:
-                    break;
-                }
-            }
 
             double lineOffsetY = static_cast<double>(lineIndex) * lineHeight;
             for (char character : line) {
@@ -534,7 +522,7 @@ namespace helengine::psvita {
     /// Appends one filled rounded rectangle using solid-color triangles for the current menu pass.
     void PsVitaRenderManager2D::AppendFilledRoundedRect(
         const float3& position,
-        const int2& size,
+        const ::int2& size,
         double radius,
         std::uint32_t colorAbgr,
         std::uint8_t renderOrder) {
