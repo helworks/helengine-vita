@@ -174,6 +174,8 @@ public sealed class PsVitaRenderManager3DSourceAuditTests {
         string sourceCode = File.ReadAllText(sourcePath);
 
         Assert.Contains("DrawSolidColorMesh", sourceCode, StringComparison.Ordinal);
+        Assert.Contains("ResolveSolidColorSubmeshColor", sourceCode, StringComparison.Ordinal);
+        Assert.Contains("PsVitaCompiledShaderRuntimeMaterial", sourceCode, StringComparison.Ordinal);
         Assert.DoesNotContain("SubmitTriangleStrip", sourceCode, StringComparison.Ordinal);
     }
 }

@@ -27,6 +27,8 @@
 #include "ObjectManager.hpp"
 #include "RuntimeMaterial.hpp"
 #include "platform/psvita/rendering/PsVitaGxmRenderer.hpp"
+#include "platform/psvita/rendering/PsVitaCompiledShaderMaterialReader.hpp"
+#include "platform/psvita/rendering/PsVitaCompiledShaderRuntimeMaterial.hpp"
 #include "platform/psvita/rendering/PsVitaPackedModelReader.hpp"
 #include "platform/psvita/rendering/PsVitaRenderManager2D.hpp"
 #include "platform/psvita/rendering/PsVitaRuntimeModel.hpp"
@@ -173,6 +175,11 @@ namespace helengine::psvita {
             throw new ArgumentException("Cooked material asset path must be provided.", "cookedAssetPath");
         }
 
+        rendering::PsVitaCompiledShaderMaterial compiledShaderMaterial;
+        if (rendering::PsVitaCompiledShaderMaterialReader::TryRead(cookedAssetPath, compiledShaderMaterial)) {
+            return BuildCompiledShaderRuntimeMaterial(compiledShaderMaterial);
+        }
+
         ::FileStream* stream = nullptr;
         ::EngineBinaryHeader* header = nullptr;
         ::Asset* asset = nullptr;
@@ -222,6 +229,20 @@ namespace helengine::psvita {
         runtimeMaterial->SetRenderState(materialAsset->RenderState);
         runtimeMaterial->set_CastsShadows(materialAsset->CastsShadows);
         runtimeMaterial->set_ReceivesShadows(materialAsset->ReceivesShadows);
+        return runtimeMaterial;
+    }
+
+    /// Builds one Vita-specific runtime material from one cooked compiled-shader material payload.
+    ::RuntimeMaterial* PsVitaRenderManager3D::BuildCompiledShaderRuntimeMaterial(const rendering::PsVitaCompiledShaderMaterial& materialAsset) {
+        auto* runtimeMaterial = new rendering::PsVitaCompiledShaderRuntimeMaterial();
+        runtimeMaterial->set_Id(materialAsset.ShaderAssetId);
+        runtimeMaterial->SetShaderAssetId(materialAsset.ShaderAssetId);
+        runtimeMaterial->SetVertexProgramName(materialAsset.VertexProgramName);
+        runtimeMaterial->SetPixelProgramName(materialAsset.PixelProgramName);
+        runtimeMaterial->SetVariantName(materialAsset.VariantName);
+        runtimeMaterial->SetBaseColorAbgr(materialAsset.BaseColorAbgr);
+        runtimeMaterial->set_CastsShadows(false);
+        runtimeMaterial->set_ReceivesShadows(false);
         return runtimeMaterial;
     }
 
@@ -369,7 +390,7 @@ namespace helengine::psvita {
         if (submeshes == nullptr || submeshes->Length == 0) {
             return;
         }
-        if (TryDrawRuntimeModelWithSolidColorPath(worldViewProjection, runtimeModel)) {
+        if (TryDrawRuntimeModelWithSolidColorPath(worldViewProjection, meshComponent, runtimeModel)) {
             return;
         }
 
@@ -499,8 +520,9 @@ namespace helengine::psvita {
     /// Attempts to draw one runtime model through the programmable solid-color GXM mesh path.
     bool PsVitaRenderManager3D::TryDrawRuntimeModelWithSolidColorPath(
         const ::float4x4& worldViewProjection,
+        ::MeshComponent* meshComponent,
         rendering::PsVitaRuntimeModel* runtimeModel) {
-        if (GxmRenderer == nullptr || runtimeModel == nullptr) {
+        if (GxmRenderer == nullptr || meshComponent == nullptr || runtimeModel == nullptr) {
             return false;
         }
 
@@ -526,13 +548,14 @@ namespace helengine::psvita {
                 continue;
             }
 
+            std::uint32_t baseColorAbgr = ResolveSolidColorSubmeshColor(meshComponent, submeshIndex);
             if (!GxmRenderer->DrawSolidColorMesh(
                 worldViewProjection,
                 positions.data(),
                 static_cast<int32_t>(positions.size()),
                 triangleIndices.data(),
                 static_cast<int32_t>(triangleIndices.size()),
-                0xFFFFFFFFu)) {
+                baseColorAbgr)) {
                 return false;
             }
 
@@ -540,6 +563,30 @@ namespace helengine::psvita {
         }
 
         return drewAnySubmesh;
+    }
+
+    /// Resolves the solid-color mesh base color that should be used for one runtime submesh draw.
+    std::uint32_t PsVitaRenderManager3D::ResolveSolidColorSubmeshColor(::MeshComponent* meshComponent, int32_t submeshIndex) {
+        if (meshComponent == nullptr) {
+            return 0xFFFFFFFFu;
+        }
+
+        Array<::RuntimeMaterial*>* materials = meshComponent->get_Materials();
+        if (materials == nullptr || materials->Length == 0) {
+            return 0xFFFFFFFFu;
+        }
+
+        int32_t materialIndex = materials->Length == 1
+            ? 0
+            : std::clamp(submeshIndex, 0, materials->Length - 1);
+        rendering::PsVitaCompiledShaderRuntimeMaterial* compiledShaderMaterial = dynamic_cast<rendering::PsVitaCompiledShaderRuntimeMaterial*>((*materials)[materialIndex]);
+        if (compiledShaderMaterial == nullptr && materials->Length > 0) {
+            compiledShaderMaterial = dynamic_cast<rendering::PsVitaCompiledShaderRuntimeMaterial*>((*materials)[0]);
+        }
+
+        return compiledShaderMaterial == nullptr
+            ? 0xFFFFFFFFu
+            : compiledShaderMaterial->GetBaseColorAbgr();
     }
 
     /// Copies one runtime submesh array from the raw model asset into PS Vita-owned submesh objects.

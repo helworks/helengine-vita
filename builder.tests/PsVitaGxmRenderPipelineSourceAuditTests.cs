@@ -175,4 +175,33 @@ public sealed class PsVitaGxmRenderPipelineSourceAuditTests {
         Assert.Contains("0xFFFFFFFFu", gxmRendererSource, StringComparison.Ordinal);
         Assert.Contains("vita2d_draw_array", gxmRendererSource, StringComparison.Ordinal);
     }
+
+    /// <summary>
+    /// Verifies the PS Vita runtime can read the cooked compiled-shader material payload and lazily initialize the programmable solid-color path on first mesh use.
+    /// </summary>
+    [Fact]
+    public void Source_whenUsingRuntimeCompiledSolidColorMaterials_containsCompiledMaterialReaderAndLazyProgramInitialization() {
+        string compiledMaterialReaderHeaderPath = PsVitaRepositoryPathResolver.ResolvePath("src", "platform", "psvita", "rendering", "PsVitaCompiledShaderMaterialReader.hpp");
+        string compiledMaterialReaderSourcePath = PsVitaRepositoryPathResolver.ResolvePath("src", "platform", "psvita", "rendering", "PsVitaCompiledShaderMaterialReader.cpp");
+        string runtimeMaterialHeaderPath = PsVitaRepositoryPathResolver.ResolvePath("src", "platform", "psvita", "rendering", "PsVitaCompiledShaderRuntimeMaterial.hpp");
+        string runtimeMaterialSourcePath = PsVitaRepositoryPathResolver.ResolvePath("src", "platform", "psvita", "rendering", "PsVitaCompiledShaderRuntimeMaterial.cpp");
+        string gxmRendererSourcePath = PsVitaRepositoryPathResolver.ResolvePath("src", "platform", "psvita", "rendering", "PsVitaGxmRenderer.cpp");
+        string renderManager3DSourcePath = PsVitaRepositoryPathResolver.ResolvePath("src", "platform", "psvita", "rendering", "PsVitaRenderManager3D.cpp");
+        string cmakePath = PsVitaRepositoryPathResolver.ResolvePath("CMakeLists.txt");
+
+        string gxmRendererSource = File.ReadAllText(gxmRendererSourcePath);
+        string renderManager3DSource = File.ReadAllText(renderManager3DSourcePath);
+        string cmakeSource = File.ReadAllText(cmakePath);
+
+        Assert.True(File.Exists(compiledMaterialReaderHeaderPath), "Expected one PS Vita compiled-shader material reader header.");
+        Assert.True(File.Exists(compiledMaterialReaderSourcePath), "Expected one PS Vita compiled-shader material reader source file.");
+        Assert.True(File.Exists(runtimeMaterialHeaderPath), "Expected one PS Vita compiled-shader runtime material header.");
+        Assert.True(File.Exists(runtimeMaterialSourcePath), "Expected one PS Vita compiled-shader runtime material source file.");
+        Assert.Contains("PsVitaCompiledShaderMaterialReader::TryRead", renderManager3DSource, StringComparison.Ordinal);
+        Assert.Contains("PsVitaCompiledShaderRuntimeMaterial", renderManager3DSource, StringComparison.Ordinal);
+        Assert.Contains("meshComponent->get_Materials()", renderManager3DSource, StringComparison.Ordinal);
+        Assert.Contains("!SolidColorProgram.IsReady() && !SolidColorProgram.Initialize()", gxmRendererSource, StringComparison.Ordinal);
+        Assert.Contains("PsVitaCompiledShaderMaterialReader.cpp", cmakeSource, StringComparison.Ordinal);
+        Assert.Contains("PsVitaCompiledShaderRuntimeMaterial.cpp", cmakeSource, StringComparison.Ordinal);
+    }
 }

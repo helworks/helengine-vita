@@ -155,11 +155,14 @@ namespace helengine::psvita::rendering {
         std::uint32_t colorAbgr) {
         if (!Initialized
             || !FrameBegun
-            || !SolidColorProgram.IsReady()
             || positions == nullptr
             || indices == nullptr
             || positionCount <= 0
             || indexCount <= 0) {
+            return false;
+        }
+
+        if (!SolidColorProgram.IsReady() && !SolidColorProgram.Initialize()) {
             return false;
         }
 
