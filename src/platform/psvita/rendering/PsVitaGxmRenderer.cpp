@@ -14,8 +14,8 @@
 
 namespace helengine::psvita::rendering {
     namespace {
-        /// Keeps the experimental runtime-compiled solid-color program disabled during renderer startup because Vita3K currently crashes inside the libshacccg path before the first frame.
-        constexpr bool EnableRuntimeCompiledSolidColorProgramAtStartup = false;
+        /// Keeps the experimental runtime-compiled solid-color program disabled until real-hardware validation is ready because Vita3K currently crashes inside the libshacccg path.
+        constexpr bool EnableRuntimeCompiledSolidColorProgram = false;
     }
 
     /// Creates one uninitialized PS Vita GXM renderer foundation.
@@ -36,7 +36,7 @@ namespace helengine::psvita::rendering {
             return false;
         }
 
-        if (EnableRuntimeCompiledSolidColorProgramAtStartup && !SolidColorProgram.Initialize()) {
+        if (EnableRuntimeCompiledSolidColorProgram && !SolidColorProgram.Initialize()) {
             vita2d_fini();
             return false;
         }
@@ -159,6 +159,9 @@ namespace helengine::psvita::rendering {
             || indices == nullptr
             || positionCount <= 0
             || indexCount <= 0) {
+            return false;
+        }
+        if (!EnableRuntimeCompiledSolidColorProgram) {
             return false;
         }
 

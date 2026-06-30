@@ -85,6 +85,34 @@ public sealed class PsVitaGxmSolidColorProgramSourceAuditTests {
     }
 
     /// <summary>
+    /// Verifies the PS Vita runtime shader path records one failed initialization attempt so Vita3K can fall back to the existing CPU mesh path instead of reloading the missing shader compiler every frame.
+    /// </summary>
+    [Fact]
+    public void Source_whenShaderCompilerModuleIsUnavailable_recordsOneFailureAndStopsRetrying() {
+        string headerSource = File.ReadAllText(PsVitaRepositoryPathResolver.ResolvePath("src", "platform", "psvita", "rendering", "PsVitaGxmSolidColorProgram.hpp"));
+        string wrapperSource = File.ReadAllText(PsVitaRepositoryPathResolver.ResolvePath("src", "platform", "psvita", "rendering", "PsVitaGxmSolidColorProgram.cpp"));
+
+        Assert.Contains("bool InitializationFailed;", headerSource, StringComparison.Ordinal);
+        Assert.Contains(", InitializationFailed(false)", wrapperSource, StringComparison.Ordinal);
+        Assert.Contains("if (InitializationFailed) {", wrapperSource, StringComparison.Ordinal);
+        Assert.Contains("InitializationFailed = true;", wrapperSource, StringComparison.Ordinal);
+        Assert.Contains("InitializationFailed = false;", wrapperSource, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Verifies the programmable solid-color mesh path stays fully disabled when the shared renderer flag says the emulator-safe Lambert fallback should remain authoritative.
+    /// </summary>
+    [Fact]
+    public void Source_whenRuntimeCompiledSolidColorProgramIsDisabled_drawPathShortCircuitsBeforeShaderInitialization() {
+        string rendererSource = File.ReadAllText(GetRendererPath());
+        string drawSolidColorMeshSource = GetDrawSolidColorMeshSource();
+
+        Assert.Contains("constexpr bool EnableRuntimeCompiledSolidColorProgram = false;", rendererSource, StringComparison.Ordinal);
+        Assert.Contains("if (!EnableRuntimeCompiledSolidColorProgram) {", drawSolidColorMeshSource, StringComparison.Ordinal);
+        Assert.Contains("return false;", drawSolidColorMeshSource, StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// Resolves the PS Vita GXM renderer source path used by the architecture audits.
     /// </summary>
     private static string GetRendererPath() {

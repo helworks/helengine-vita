@@ -71,9 +71,9 @@ namespace {
 
     /// Stores one projected triangle and its average depth so the Lambert fallback pass can draw farther triangles first without a depth buffer.
     struct ProjectedTriangle final {
-        rendering::PsVitaSolidColorVertex Vertex0;
-        rendering::PsVitaSolidColorVertex Vertex1;
-        rendering::PsVitaSolidColorVertex Vertex2;
+        helengine::psvita::rendering::PsVitaSolidColorVertex Vertex0;
+        helengine::psvita::rendering::PsVitaSolidColorVertex Vertex1;
+        helengine::psvita::rendering::PsVitaSolidColorVertex Vertex2;
         float AverageDepth;
     };
 

@@ -105,7 +105,7 @@ namespace helengine::psvita::rendering {
                 throw new InvalidOperationException("PS Vita packed model submesh counts cannot be negative.");
             }
 
-            auto* runtimeModel = new PsVitaRuntimeModel(std::move(positions));
+            auto* runtimeModel = new PsVitaRuntimeModel(std::move(positions), std::vector<::float3>());
             auto* runtimeSubmeshes = new Array<rendering::PsVitaRuntimeSubmesh*>(submeshCount);
             for (std::int32_t submeshIndex = 0; submeshIndex < submeshCount; ++submeshIndex) {
                 std::string materialSlotName = ReadString(file);
