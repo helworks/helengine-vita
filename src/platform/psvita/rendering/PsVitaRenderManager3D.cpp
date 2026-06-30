@@ -26,6 +26,8 @@
 #include "ModelAssetIndexData.hpp"
 #include "ObjectManager.hpp"
 #include "RuntimeMaterial.hpp"
+#include "ShaderMaterialAsset.hpp"
+#include "ShaderMaterialAssetBinarySerializer.hpp"
 #include "platform/psvita/rendering/PsVitaGxmRenderer.hpp"
 #include "platform/psvita/rendering/PsVitaCompiledShaderMaterialReader.hpp"
 #include "platform/psvita/rendering/PsVitaCompiledShaderRuntimeMaterial.hpp"
@@ -52,6 +54,18 @@ namespace {
     bool PsVitaLoggedProjectionDiagnostics = false;
     int PsVitaProjectionDiagnosticSamplesRemaining = 12;
     unsigned int PsVitaLoggedMeshDiagnosticsCount = 0u;
+
+    /// Appends one PS Vita 3D renderer trace line to the shared boot-trace log.
+    void AppendRenderTrace(const std::string& message) {
+        std::FILE* file = std::fopen(PsVitaBootTracePath, "a");
+        if (file == nullptr) {
+            return;
+        }
+
+        std::fputs(message.c_str(), file);
+        std::fputc('\n', file);
+        std::fclose(file);
+    }
 
     /// Stores one projected triangle and its average depth so the temporary white mesh pass can draw farther triangles first without a material/depth system.
     struct ProjectedTriangle final {
@@ -124,7 +138,7 @@ namespace {
         const float farPlaneDistance = ClampFarPlaneDistance(nearPlaneDistance, PsVitaDefaultFarPlaneDistance);
 
         ::float4x4 projection;
-        float4x4::CreatePerspectiveFieldOfView(fieldOfView, aspectRatio, nearPlaneDistance, farPlaneDistance, projection);
+        float4x4::CreatePerspectiveFieldOfView__out4(fieldOfView, aspectRatio, nearPlaneDistance, farPlaneDistance, projection);
         return projection;
     }
 }
@@ -132,7 +146,7 @@ namespace {
 namespace helengine::psvita {
     /// Creates the PS Vita 3D renderer with the Vita display size.
     PsVitaRenderManager3D::PsVitaRenderManager3D() {
-        set_MainWindowSize(new ::int2(PsVitaScreenWidth, PsVitaScreenHeight));
+        set_MainWindowSize(::int2(PsVitaScreenWidth, PsVitaScreenHeight));
         ActiveViewport = ::float4(0.0f, 0.0f, static_cast<float>(PsVitaScreenWidth), static_cast<float>(PsVitaScreenHeight));
         ActiveViewProjection = ::float4x4::get_Identity();
     }
@@ -175,8 +189,11 @@ namespace helengine::psvita {
             throw new ArgumentException("Cooked material asset path must be provided.", "cookedAssetPath");
         }
 
+        AppendRenderTrace("RenderManager3D::BuildMaterialFromCooked path=" + cookedAssetPath);
+
         rendering::PsVitaCompiledShaderMaterial compiledShaderMaterial;
         if (rendering::PsVitaCompiledShaderMaterialReader::TryRead(cookedAssetPath, compiledShaderMaterial)) {
+            AppendRenderTrace("RenderManager3D::BuildMaterialFromCooked compiled-shader path=" + cookedAssetPath);
             return BuildCompiledShaderRuntimeMaterial(compiledShaderMaterial);
         }
 
@@ -186,6 +203,17 @@ namespace helengine::psvita {
         try {
             stream = ::File::OpenRead(cookedAssetPath);
             header = ::EngineBinaryHeaderSerializer::Read(stream);
+            if (header->FormatId == ::ShaderMaterialAssetBinarySerializer::FormatId) {
+                ::ShaderMaterialAsset* cookedShaderMaterialAsset = ::ShaderMaterialAssetBinarySerializer::Deserialize(stream, header);
+                header = nullptr;
+                delete stream;
+                stream = nullptr;
+
+                ::RuntimeMaterial* runtimeMaterial = BuildMaterialFromCooked(cookedShaderMaterialAsset);
+                delete cookedShaderMaterialAsset;
+                return runtimeMaterial;
+            }
+
             asset = ::EditorAssetBinarySerializer::Deserialize(stream, header);
             header = nullptr;
             delete stream;
@@ -230,6 +258,26 @@ namespace helengine::psvita {
         return runtimeMaterial;
     }
 
+    /// Builds one concrete runtime material from one deserialized shader material asset payload.
+    ::RuntimeMaterial* PsVitaRenderManager3D::BuildMaterialFromCooked(::ShaderMaterialAsset* materialAsset) {
+        if (materialAsset == nullptr) {
+            throw new ArgumentNullException("materialAsset");
+        }
+        if (materialAsset->RenderState == nullptr) {
+            throw new InvalidOperationException("PS Vita cooked shader material payloads must include a render state.");
+        }
+
+        auto* runtimeMaterial = new rendering::PsVitaCompiledShaderRuntimeMaterial();
+        runtimeMaterial->set_Id(materialAsset->get_Id());
+        runtimeMaterial->SetRenderState(materialAsset->RenderState);
+        runtimeMaterial->SetShaderAssetId(materialAsset->ShaderAssetId);
+        runtimeMaterial->SetVertexProgramName(materialAsset->VertexProgram);
+        runtimeMaterial->SetPixelProgramName(materialAsset->PixelProgram);
+        runtimeMaterial->SetVariantName(materialAsset->Variant);
+        runtimeMaterial->SetBaseColorAbgr(0xFFFFFFFFu);
+        return runtimeMaterial;
+    }
+
     /// Builds one Vita-specific runtime material from one cooked compiled-shader material payload.
     ::RuntimeMaterial* PsVitaRenderManager3D::BuildCompiledShaderRuntimeMaterial(const rendering::PsVitaCompiledShaderMaterial& materialAsset) {
         auto* runtimeMaterial = new rendering::PsVitaCompiledShaderRuntimeMaterial();
@@ -248,8 +296,11 @@ namespace helengine::psvita {
             throw new ArgumentException("Cooked model asset path must be provided.", "cookedAssetPath");
         }
 
+        AppendRenderTrace("RenderManager3D::BuildModelFromCooked path=" + cookedAssetPath);
+
         ::RuntimeModel* packedRuntimeModel = rendering::PsVitaPackedModelReader::TryRead(cookedAssetPath);
         if (packedRuntimeModel != nullptr) {
+            AppendRenderTrace("RenderManager3D::BuildModelFromCooked packed path=" + cookedAssetPath);
             return packedRuntimeModel;
         }
 
@@ -297,6 +348,14 @@ namespace helengine::psvita {
             copiedPositions.push_back((*data->Positions)[positionIndex]);
         }
 
+        std::vector<::float3> copiedNormals;
+        if (data->Normals != nullptr && data->Normals->Length == data->Positions->Length) {
+            copiedNormals.reserve(static_cast<std::size_t>(data->Normals->Length));
+            for (int32_t normalIndex = 0; normalIndex < data->Normals->Length; ++normalIndex) {
+                copiedNormals.push_back((*data->Normals)[normalIndex]);
+            }
+        }
+
         ::ModelAssetIndexData* indexData = ::ModelAssetIndexData::Resolve(data);
         std::vector<std::uint32_t> resolvedIndices;
         resolvedIndices.reserve(static_cast<std::size_t>(std::max(0, indexData->IndexCount)));
@@ -311,7 +370,7 @@ namespace helengine::psvita {
         }
         delete indexData;
 
-        auto* runtimeModel = new rendering::PsVitaRuntimeModel(std::move(copiedPositions));
+        auto* runtimeModel = new rendering::PsVitaRuntimeModel(std::move(copiedPositions), std::move(copiedNormals));
         runtimeModel->SetSubmeshes(BuildRuntimeSubmeshes(data, resolvedIndices));
         return runtimeModel;
     }
@@ -346,16 +405,12 @@ namespace helengine::psvita {
             return;
         }
 
-        ::int2* mainWindowSize = get_MainWindowSize();
-        if (mainWindowSize == nullptr) {
-            ActiveCamera = nullptr;
-            return;
-        }
+        ::int2 mainWindowSize = get_MainWindowSize();
         ActiveCamera = camera;
         ActiveViewport = ResolveViewport(
             camera->get_Viewport(),
-            static_cast<double>(mainWindowSize->X),
-            static_cast<double>(mainWindowSize->Y));
+            static_cast<double>(mainWindowSize.X),
+            static_cast<double>(mainWindowSize.Y));
         if (ActiveViewport.Z <= 0.0f || ActiveViewport.W <= 0.0f) {
             ActiveCamera = nullptr;
             return;
@@ -384,7 +439,7 @@ namespace helengine::psvita {
 
         ::float4x4 world = BuildWorldTransform(meshComponent->get_Parent());
         ::float4x4 worldViewProjection;
-        float4x4::Multiply(world, ActiveViewProjection, worldViewProjection);
+        float4x4::Multiply__ref0_ref1_out2(world, ActiveViewProjection, worldViewProjection);
 
         Array<rendering::PsVitaRuntimeSubmesh*>* submeshes = runtimeModel->get_Submeshes();
         if (submeshes == nullptr || submeshes->Length == 0) {
@@ -571,7 +626,12 @@ namespace helengine::psvita {
             return 0xFFFFFFFFu;
         }
 
-        ::RuntimeMaterial* material = meshComponent->get_Material();
+        Array<::RuntimeMaterial*>* materials = meshComponent->get_Materials();
+        ::RuntimeMaterial* material = materials != nullptr && submeshIndex >= 0 && submeshIndex < materials->Length
+            ? (*materials)[submeshIndex]
+            : (materials != nullptr && materials->Length > 0
+                ? (*materials)[0]
+                : nullptr);
         if (material == nullptr) {
             return 0xFFFFFFFFu;
         }
@@ -626,12 +686,12 @@ namespace helengine::psvita {
         ::float3 cameraTarget = cameraPosition + cameraForward;
 
         ::float4x4 view;
-        float4x4::CreateLookAt(cameraPosition, cameraTarget, cameraUp, view);
+        float4x4::CreateLookAt__ref0_ref1_ref2_out3(cameraPosition, cameraTarget, cameraUp, view);
 
         ::float4x4 projection = CreatePerspectiveProjection(PsVitaPerspectiveFieldOfViewRadians, viewport.Z / viewport.W);
 
         ::float4x4 viewProjection;
-        float4x4::Multiply(view, projection, viewProjection);
+        float4x4::Multiply__ref0_ref1_out2(view, projection, viewProjection);
         if (PsVitaCameraDiagnosticSamplesRemaining > 0) {
             PsVitaCameraDiagnosticSamplesRemaining--;
             std::FILE* file = std::fopen(PsVitaBootTracePath, "a");
@@ -685,21 +745,21 @@ namespace helengine::psvita {
 
         ::float4 orientation = entity->get_Orientation();
         ::float4x4 rotation;
-        float4x4::CreateFromQuaternion(orientation, rotation);
+        float4x4::CreateFromQuaternion__ref0_out1(orientation, rotation);
 
         ::float3 scale = entity->get_Scale();
         ::float4x4 size;
-        float4x4::CreateScale(scale.X, scale.Y, scale.Z, size);
+        float4x4::CreateScale__out3(scale.X, scale.Y, scale.Z, size);
 
         ::float4x4 rotationScale;
-        float4x4::Multiply(rotation, size, rotationScale);
+        float4x4::Multiply__ref0_ref1_out2(rotation, size, rotationScale);
 
         ::float3 position = entity->get_Position();
         ::float4x4 translation;
-        float4x4::CreateTranslation(position, translation);
+        float4x4::CreateTranslation__ref0_out1(position, translation);
 
         ::float4x4 world;
-        float4x4::Multiply(rotationScale, translation, world);
+        float4x4::Multiply__ref0_ref1_out2(rotationScale, translation, world);
         return world;
     }
 

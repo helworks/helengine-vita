@@ -14,11 +14,14 @@ namespace helengine::psvita::rendering {
     /// Stores one PS Vita-owned runtime model copy so mesh components can render after the source model asset has been released by the scene loader.
     class PsVitaRuntimeModel final : public ::RuntimeModel {
     public:
-        /// Creates one PS Vita runtime model with copied positions for the white-mesh renderer.
-        explicit PsVitaRuntimeModel(std::vector<::float3> positions);
+        /// Creates one PS Vita runtime model with copied positions and normals for the Lambert fallback renderer.
+        explicit PsVitaRuntimeModel(std::vector<::float3> positions, std::vector<::float3> normals);
 
         /// Gets the copied model-space positions owned by this runtime model.
         const std::vector<::float3>& GetPositions() const;
+
+        /// Gets the copied model-space normals owned by this runtime model.
+        const std::vector<::float3>& GetNormals() const;
 
         /// Gets the Vita-owned runtime submesh collection used by the mesh path.
         Array<PsVitaRuntimeSubmesh*>* get_Submeshes() const;
@@ -29,6 +32,9 @@ namespace helengine::psvita::rendering {
     private:
         /// Stores the copied model-space positions used by the PS Vita white-mesh renderer.
         std::vector<::float3> Positions;
+
+        /// Stores the copied model-space normals used by the PS Vita Lambert fallback renderer.
+        std::vector<::float3> Normals;
 
         /// Stores the Vita-owned runtime submesh collection used by the mesh path.
         Array<PsVitaRuntimeSubmesh*>* Submeshes;
