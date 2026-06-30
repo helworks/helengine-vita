@@ -6,6 +6,8 @@
 #include <vector>
 
 class Entity;
+class AmbientLightComponent;
+class DirectionalLightComponent;
 class ICamera;
 class IDrawable3D;
 class MaterialAsset;
@@ -13,6 +15,7 @@ class MeshComponent;
 class ModelAsset;
 class RuntimeMaterial;
 class RuntimeModel;
+class ShaderMaterialAsset;
 template<typename T>
 class Array;
 
@@ -21,6 +24,7 @@ class Array;
 #include "float3.hpp"
 #include "float4.hpp"
 #include "float4x4.hpp"
+#include "platform/psvita/rendering/PsVitaSolidColorVertex.hpp"
 
 namespace helengine::psvita::rendering {
     struct PsVitaCompiledShaderMaterial;
@@ -31,16 +35,16 @@ namespace helengine::psvita::rendering {
 }
 
 namespace helengine::psvita {
-    /// Provides the first PS Vita native 3D mesh bridge so runtime models can render as solid white GPU geometry.
+    /// Provides the first PS Vita native 3D mesh bridge so runtime models can render through the emulator-safe Lambert fallback path.
     class PsVitaRenderManager3D final : public ::RenderManager3D, public ::IRenderVisitor3D {
     public:
         /// Creates the PS Vita 3D renderer with the Vita display size.
         PsVitaRenderManager3D();
 
-        /// Assigns the native PS Vita GXM renderer that will receive white mesh triangle batches.
+        /// Assigns the native PS Vita GXM renderer that will receive projected Lambert-lit triangle batches.
         void SetGxmRenderer(rendering::PsVitaGxmRenderer* gxmRenderer);
 
-        /// Traverses camera-owned 3D queues, submits white mesh geometry, and forwards ordered 2D queues to the Vita 2D renderer.
+        /// Traverses camera-owned 3D queues, submits Lambert-lit mesh geometry, and forwards ordered 2D queues to the Vita 2D renderer.
         void Draw() override;
 
         /// Builds one concrete runtime material from one packaged cooked platform material asset.
@@ -49,13 +53,16 @@ namespace helengine::psvita {
         /// Builds one concrete runtime material from one deserialized material asset payload.
         ::RuntimeMaterial* BuildMaterialFromCooked(::MaterialAsset* materialAsset);
 
+        /// Builds one concrete runtime material from one deserialized shader material asset payload.
+        ::RuntimeMaterial* BuildMaterialFromCooked(::ShaderMaterialAsset* materialAsset);
+
         /// Builds one concrete PS Vita runtime model from one packaged cooked model asset.
         ::RuntimeModel* BuildModelFromCooked(std::string cookedAssetPath);
 
         /// Builds one concrete PS Vita runtime model from raw data.
         ::RuntimeModel* BuildModelFromRaw(::ModelAsset* data) override;
 
-        /// Visits one ordered 3D drawable and renders supported mesh content through the white triangle path.
+        /// Visits one ordered 3D drawable and renders supported mesh content through the Lambert fallback path.
         void Visit(::IDrawable3D* drawable) override;
 
     private:
@@ -70,6 +77,27 @@ namespace helengine::psvita {
             const ::float4x4& worldViewProjection,
             ::MeshComponent* meshComponent,
             rendering::PsVitaRuntimeModel* runtimeModel);
+
+        /// Resolves the first active runtime directional light that should drive the Lambert fallback path.
+        static ::DirectionalLightComponent* ResolveActiveDirectionalLight();
+
+        /// Resolves one normalized world-space light direction from the supplied runtime directional light.
+        static ::float3 ResolveDirectionalLightDirection(::DirectionalLightComponent* lightComponent);
+
+        /// Resolves the accumulated ambient light color from the runtime object manager.
+        static ::float3 ResolveAmbientLightColor();
+
+        /// Resolves the Lambert fallback base color that should be used for one runtime submesh draw.
+        static std::uint32_t ResolveLambertBaseColor(::MeshComponent* meshComponent, int32_t submeshIndex);
+
+        /// Builds one packed ABGR vertex color from the supplied base color and Lambert lighting inputs.
+        static std::uint32_t BuildLambertVertexColor(
+            std::uint32_t baseColorAbgr,
+            const ::float3& worldNormal,
+            const ::float3& lightDirection,
+            const ::float3& directionalLightColor,
+            const ::float3& ambientLightColor,
+            bool hasDirectionalLight);
 
         /// Builds one Vita-specific runtime material from one cooked compiled-shader material payload.
         static ::RuntimeMaterial* BuildCompiledShaderRuntimeMaterial(const rendering::PsVitaCompiledShaderMaterial& materialAsset);
@@ -93,7 +121,7 @@ namespace helengine::psvita {
             const ::float4& viewport,
             ::float3& projectedPoint);
 
-        /// Stores the native PS Vita GXM renderer that receives white mesh triangle batches.
+        /// Stores the native PS Vita GXM renderer that receives projected Lambert-lit triangle batches.
         rendering::PsVitaGxmRenderer* GxmRenderer = nullptr;
 
         /// Stores the active camera while the ordered 3D queue is being visited.
@@ -105,8 +133,8 @@ namespace helengine::psvita {
         /// Stores the active camera view-projection matrix for the current 3D queue traversal.
         ::float4x4 ActiveViewProjection;
 
-        /// Stores the projected white mesh triangles waiting for GPU submission.
-        std::vector<::float3> QueuedMeshTriangles;
+        /// Stores the projected Lambert-lit mesh triangles waiting for GPU submission.
+        std::vector<rendering::PsVitaSolidColorVertex> QueuedMeshTriangles;
     };
 }
 

@@ -10,7 +10,9 @@
 
 #include "Asset.hpp"
 #include "AssetSerializer.hpp"
+#include "AmbientLightComponent.hpp"
 #include "Core.hpp"
+#include "DirectionalLightComponent.hpp"
 #include "EditorAssetBinarySerializer.hpp"
 #include "EngineBinaryHeader.hpp"
 #include "EngineBinaryHeaderSerializer.hpp"
@@ -67,11 +69,11 @@ namespace {
         std::fclose(file);
     }
 
-    /// Stores one projected triangle and its average depth so the temporary white mesh pass can draw farther triangles first without a material/depth system.
+    /// Stores one projected triangle and its average depth so the Lambert fallback pass can draw farther triangles first without a depth buffer.
     struct ProjectedTriangle final {
-        ::float3 Vertex0;
-        ::float3 Vertex1;
-        ::float3 Vertex2;
+        rendering::PsVitaSolidColorVertex Vertex0;
+        rendering::PsVitaSolidColorVertex Vertex1;
+        rendering::PsVitaSolidColorVertex Vertex2;
         float AverageDepth;
     };
 
@@ -156,7 +158,7 @@ namespace helengine::psvita {
         GxmRenderer = gxmRenderer;
     }
 
-    /// Traverses camera-owned 3D queues, submits white mesh geometry, and forwards ordered 2D queues to the Vita 2D renderer.
+    /// Traverses camera-owned 3D queues, submits Lambert-lit mesh geometry, and forwards ordered 2D queues to the Vita 2D renderer.
     void PsVitaRenderManager3D::Draw() {
         if (Core::Instance == nullptr || Core::Instance->ObjectManager == nullptr || Core::Instance->RenderManager2D == nullptr) {
             return;
@@ -375,7 +377,7 @@ namespace helengine::psvita {
         return runtimeModel;
     }
 
-    /// Visits one ordered 3D drawable and renders supported mesh content through the white triangle path.
+    /// Visits one ordered 3D drawable and renders supported mesh content through the Lambert fallback path.
     void PsVitaRenderManager3D::Visit(::IDrawable3D* drawable) {
         if (drawable == nullptr || ActiveCamera == nullptr) {
             return;
@@ -419,7 +421,7 @@ namespace helengine::psvita {
         renderQueue->VisitOrdered(this);
 
         if (GxmRenderer != nullptr && !QueuedMeshTriangles.empty()) {
-            GxmRenderer->SubmitSolidWhiteMeshTriangles(QueuedMeshTriangles);
+            GxmRenderer->SubmitSolidColorTriangles(QueuedMeshTriangles);
             QueuedMeshTriangles.clear();
         }
 
@@ -432,12 +434,14 @@ namespace helengine::psvita {
             return;
         }
 
+        ::Entity* parent = meshComponent->get_Parent();
         const std::vector<::float3>& positions = runtimeModel->GetPositions();
         if (positions.empty()) {
             return;
         }
+        const std::vector<::float3>& normals = runtimeModel->GetNormals();
 
-        ::float4x4 world = BuildWorldTransform(meshComponent->get_Parent());
+        ::float4x4 world = BuildWorldTransform(parent);
         ::float4x4 worldViewProjection;
         float4x4::Multiply__ref0_ref1_out2(world, ActiveViewProjection, worldViewProjection);
 
@@ -448,6 +452,22 @@ namespace helengine::psvita {
         if (TryDrawRuntimeModelWithSolidColorPath(worldViewProjection, meshComponent, runtimeModel)) {
             return;
         }
+
+        ::float3 entityPosition = parent->get_Position();
+        ::float3 entityScale = parent->get_Scale();
+        ::float4 entityOrientation = parent->get_Orientation();
+        ::DirectionalLightComponent* directionalLight = ResolveActiveDirectionalLight();
+        const bool hasDirectionalLight = directionalLight != nullptr;
+        const ::float3 lightDirection = hasDirectionalLight
+            ? ResolveDirectionalLightDirection(directionalLight)
+            : ::float3::get_Zero();
+        const ::float3 directionalLightColor = hasDirectionalLight
+            ? ::float3(
+                directionalLight->get_Color().X * directionalLight->get_Intensity(),
+                directionalLight->get_Color().Y * directionalLight->get_Intensity(),
+                directionalLight->get_Color().Z * directionalLight->get_Intensity())
+            : ::float3::get_Zero();
+        const ::float3 ambientLightColor = ResolveAmbientLightColor();
 
         std::size_t attemptedTriangleCount = 0u;
         std::vector<ProjectedTriangle> projectedTriangles;
@@ -462,6 +482,7 @@ namespace helengine::psvita {
             }
 
             const std::vector<std::uint32_t>& triangleIndices = submesh->GetTriangleIndices();
+            const std::uint32_t baseColorAbgr = ResolveLambertBaseColor(meshComponent, submeshIndex);
             for (std::size_t index = 0; index + 2 < triangleIndices.size(); index += 3) {
                 attemptedTriangleCount++;
                 const std::uint32_t triangleIndex0 = triangleIndices[index];
@@ -471,12 +492,41 @@ namespace helengine::psvita {
                     continue;
                 }
 
+                const ::float3 localPosition0 = positions[triangleIndex0];
+                const ::float3 localPosition1 = positions[triangleIndex1];
+                const ::float3 localPosition2 = positions[triangleIndex2];
+                const ::float3 worldPosition0 = entityPosition + float4::RotateVector(localPosition0 * entityScale, entityOrientation);
+                const ::float3 worldPosition1 = entityPosition + float4::RotateVector(localPosition1 * entityScale, entityOrientation);
+                const ::float3 worldPosition2 = entityPosition + float4::RotateVector(localPosition2 * entityScale, entityOrientation);
+
+                ::float3 worldNormal0;
+                ::float3 worldNormal1;
+                ::float3 worldNormal2;
+                if (normals.size() == positions.size()) {
+                    worldNormal0 = float3::Normalize(float4::RotateVector(normals[triangleIndex0], entityOrientation));
+                    worldNormal1 = float3::Normalize(float4::RotateVector(normals[triangleIndex1], entityOrientation));
+                    worldNormal2 = float3::Normalize(float4::RotateVector(normals[triangleIndex2], entityOrientation));
+                } else {
+                    ::float3 edge01 = worldPosition1 - worldPosition0;
+                    ::float3 edge02 = worldPosition2 - worldPosition0;
+                    ::float3 faceNormal = float3::Cross(edge01, edge02);
+                    if (faceNormal.LengthSquared() <= 0.000001f) {
+                        faceNormal = ::float3::get_UnitZ();
+                    } else {
+                        faceNormal = float3::Normalize(faceNormal);
+                    }
+
+                    worldNormal0 = faceNormal;
+                    worldNormal1 = faceNormal;
+                    worldNormal2 = faceNormal;
+                }
+
                 ::float3 projectedVertex0;
                 ::float3 projectedVertex1;
                 ::float3 projectedVertex2;
-                if (!TryProjectToScreen(positions[triangleIndex0], worldViewProjection, ActiveViewport, projectedVertex0)
-                    || !TryProjectToScreen(positions[triangleIndex1], worldViewProjection, ActiveViewport, projectedVertex1)
-                    || !TryProjectToScreen(positions[triangleIndex2], worldViewProjection, ActiveViewport, projectedVertex2)) {
+                if (!TryProjectToScreen(localPosition0, worldViewProjection, ActiveViewport, projectedVertex0)
+                    || !TryProjectToScreen(localPosition1, worldViewProjection, ActiveViewport, projectedVertex1)
+                    || !TryProjectToScreen(localPosition2, worldViewProjection, ActiveViewport, projectedVertex2)) {
                     continue;
                 }
 
@@ -488,9 +538,24 @@ namespace helengine::psvita {
                 }
 
                 projectedTriangles.push_back(ProjectedTriangle {
-                    projectedVertex0,
-                    projectedVertex1,
-                    projectedVertex2,
+                    rendering::PsVitaSolidColorVertex {
+                        projectedVertex0.X,
+                        projectedVertex0.Y,
+                        BuildLambertVertexColor(baseColorAbgr, worldNormal0, lightDirection, directionalLightColor, ambientLightColor, hasDirectionalLight),
+                        0u
+                    },
+                    rendering::PsVitaSolidColorVertex {
+                        projectedVertex1.X,
+                        projectedVertex1.Y,
+                        BuildLambertVertexColor(baseColorAbgr, worldNormal1, lightDirection, directionalLightColor, ambientLightColor, hasDirectionalLight),
+                        0u
+                    },
+                    rendering::PsVitaSolidColorVertex {
+                        projectedVertex2.X,
+                        projectedVertex2.Y,
+                        BuildLambertVertexColor(baseColorAbgr, worldNormal2, lightDirection, directionalLightColor, ambientLightColor, hasDirectionalLight),
+                        0u
+                    },
                     (projectedVertex0.Z + projectedVertex1.Z + projectedVertex2.Z) / 3.0f
                 });
             }
@@ -618,6 +683,107 @@ namespace helengine::psvita {
         }
 
         return drewAnySubmesh;
+    }
+
+    /// Resolves the first active runtime directional light that should drive the Lambert fallback path.
+    ::DirectionalLightComponent* PsVitaRenderManager3D::ResolveActiveDirectionalLight() {
+        if (Core::Instance == nullptr || Core::Instance->ObjectManager == nullptr) {
+            return nullptr;
+        }
+
+        List<::DirectionalLightComponent*>* directionalLights = Core::Instance->ObjectManager->get_DirectionalLights();
+        if (directionalLights == nullptr) {
+            return nullptr;
+        }
+
+        for (int32_t lightIndex = 0; lightIndex < directionalLights->get_Count(); ++lightIndex) {
+            ::DirectionalLightComponent* directionalLight = (*directionalLights)[lightIndex];
+            if (directionalLight != nullptr
+                && directionalLight->get_Parent() != nullptr
+                && directionalLight->get_Intensity() > 0.0f) {
+                return directionalLight;
+            }
+        }
+
+        return nullptr;
+    }
+
+    /// Resolves one normalized world-space light direction from the supplied runtime directional light.
+    ::float3 PsVitaRenderManager3D::ResolveDirectionalLightDirection(::DirectionalLightComponent* lightComponent) {
+        if (lightComponent == nullptr || lightComponent->get_Parent() == nullptr) {
+            return ::float3::get_Zero();
+        }
+
+        return float3::Normalize(float4::RotateVector(::float3(0.0f, 0.0f, -1.0f), lightComponent->get_Parent()->get_Orientation()));
+    }
+
+    /// Resolves the accumulated ambient light color from the runtime object manager.
+    ::float3 PsVitaRenderManager3D::ResolveAmbientLightColor() {
+        if (Core::Instance == nullptr || Core::Instance->ObjectManager == nullptr) {
+            return ::float3::get_Zero();
+        }
+
+        List<::AmbientLightComponent*>* ambientLights = Core::Instance->ObjectManager->get_AmbientLights();
+        if (ambientLights == nullptr) {
+            return ::float3::get_Zero();
+        }
+
+        ::float3 ambientLightColor = ::float3::get_Zero();
+        for (int32_t lightIndex = 0; lightIndex < ambientLights->get_Count(); ++lightIndex) {
+            ::AmbientLightComponent* ambientLight = (*ambientLights)[lightIndex];
+            if (ambientLight == nullptr || ambientLight->get_Intensity() <= 0.0f) {
+                continue;
+            }
+
+            ::float4 color = ambientLight->get_Color();
+            ambientLightColor = ambientLightColor + ::float3(
+                color.X * ambientLight->get_Intensity(),
+                color.Y * ambientLight->get_Intensity(),
+                color.Z * ambientLight->get_Intensity());
+        }
+
+        return ::float3(
+            std::min(1.0f, ambientLightColor.X),
+            std::min(1.0f, ambientLightColor.Y),
+            std::min(1.0f, ambientLightColor.Z));
+    }
+
+    /// Resolves the Lambert fallback base color that should be used for one runtime submesh draw.
+    std::uint32_t PsVitaRenderManager3D::ResolveLambertBaseColor(::MeshComponent* meshComponent, int32_t submeshIndex) {
+        return ResolveSolidColorSubmeshColor(meshComponent, submeshIndex);
+    }
+
+    /// Builds one packed ABGR vertex color from the supplied base color and Lambert lighting inputs.
+    std::uint32_t PsVitaRenderManager3D::BuildLambertVertexColor(
+        std::uint32_t baseColorAbgr,
+        const ::float3& worldNormal,
+        const ::float3& lightDirection,
+        const ::float3& directionalLightColor,
+        const ::float3& ambientLightColor,
+        bool hasDirectionalLight) {
+        const float red = static_cast<float>(baseColorAbgr & 0xFFu) / 255.0f;
+        const float green = static_cast<float>((baseColorAbgr >> 8u) & 0xFFu) / 255.0f;
+        const float blue = static_cast<float>((baseColorAbgr >> 16u) & 0xFFu) / 255.0f;
+        const std::uint32_t alpha = (baseColorAbgr >> 24u) & 0xFFu;
+
+        const float lambert = hasDirectionalLight
+            ? std::max(0.0f, float3::Dot(float3::Normalize(worldNormal), -lightDirection))
+            : 1.0f;
+        const ::float3 directionalContribution = hasDirectionalLight
+            ? directionalLightColor * lambert
+            : ::float3::get_Zero();
+        const ::float3 lighting = ::float3(
+            std::min(1.0f, ambientLightColor.X + directionalContribution.X + (hasDirectionalLight ? 0.0f : 1.0f)),
+            std::min(1.0f, ambientLightColor.Y + directionalContribution.Y + (hasDirectionalLight ? 0.0f : 1.0f)),
+            std::min(1.0f, ambientLightColor.Z + directionalContribution.Z + (hasDirectionalLight ? 0.0f : 1.0f)));
+
+        const std::uint32_t litRed = static_cast<std::uint32_t>(std::clamp(red * lighting.X, 0.0f, 1.0f) * 255.0f + 0.5f);
+        const std::uint32_t litGreen = static_cast<std::uint32_t>(std::clamp(green * lighting.Y, 0.0f, 1.0f) * 255.0f + 0.5f);
+        const std::uint32_t litBlue = static_cast<std::uint32_t>(std::clamp(blue * lighting.Z, 0.0f, 1.0f) * 255.0f + 0.5f);
+        return litRed
+            | (litGreen << 8u)
+            | (litBlue << 16u)
+            | (alpha << 24u);
     }
 
     /// Resolves the solid-color mesh base color that should be used for one runtime submesh draw.
