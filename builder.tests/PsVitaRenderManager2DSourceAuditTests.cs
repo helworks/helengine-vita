@@ -20,13 +20,17 @@ public sealed class PsVitaRenderManager2DSourceAuditTests {
 
         Assert.Contains("class PsVitaRuntimeTexture final : public RuntimeTexture", runtimeTextureHeaderSource, StringComparison.Ordinal);
         Assert.Contains("::RuntimeTexture* BuildTextureFromRaw(::TextureAsset* data) override;", headerSource, StringComparison.Ordinal);
-        Assert.Contains("void ReleaseTexture(::RuntimeTexture* texture) override;", headerSource, StringComparison.Ordinal);
-        Assert.Contains("void ReleaseFont(::FontAsset* font) override;", headerSource, StringComparison.Ordinal);
+        Assert.Contains("void ReleaseTexture(::RuntimeTexture* texture);", headerSource, StringComparison.Ordinal);
+        Assert.Contains("void ReleaseFont(::FontAsset* font);", headerSource, StringComparison.Ordinal);
+        Assert.Contains("void NotifyFramePresented();", headerSource, StringComparison.Ordinal);
         Assert.Contains("PsVitaRuntimeTexture", sourceCode, StringComparison.Ordinal);
         Assert.DoesNotContain("return nullptr;", sourceCode, StringComparison.Ordinal);
         Assert.Contains("BuildTextureFromRaw", sourceCode, StringComparison.Ordinal);
         Assert.Contains("ReleaseTexture", sourceCode, StringComparison.Ordinal);
         Assert.Contains("ReleaseFont", sourceCode, StringComparison.Ordinal);
+        Assert.Contains("void PsVitaRenderManager2D::NotifyFramePresented()", sourceCode, StringComparison.Ordinal);
+        Assert.Contains("TextureCache.NotifyFramePresented();", sourceCode, StringComparison.Ordinal);
+        Assert.DoesNotContain("FinalizeReleasedTexturesAfterPresent", sourceCode, StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -39,7 +43,7 @@ public sealed class PsVitaRenderManager2DSourceAuditTests {
         string headerSource = File.ReadAllText(headerPath);
         string sourceCode = File.ReadAllText(sourcePath);
 
-        Assert.Contains("::RuntimeTexture* BuildTextureFromCooked(std::string cookedAssetPath) override;", headerSource, StringComparison.Ordinal);
+        Assert.Contains("::RuntimeTexture* BuildTextureFromCooked(std::string cookedAssetPath);", headerSource, StringComparison.Ordinal);
         Assert.Contains("#include \"AssetSerializer.hpp\"", sourceCode, StringComparison.Ordinal);
         Assert.Contains("#include \"Asset.hpp\"", sourceCode, StringComparison.Ordinal);
         Assert.Contains("#include \"runtime/native_cast.hpp\"", sourceCode, StringComparison.Ordinal);
@@ -53,24 +57,35 @@ public sealed class PsVitaRenderManager2DSourceAuditTests {
     }
 
     /// <summary>
-    /// Verifies the PS Vita 2D renderer uses the generated-core global int2 type instead of an unqualified namespace-local lookup.
+    /// Verifies the PS Vita font release path hands runtime texture wrapper destruction to the texture cache instead of deleting the wrapper immediately after queuing deferred GPU destruction.
     /// </summary>
     [Fact]
-    public void Source_whenUsingGeneratedCoreScreenSizes_referencesGlobalGeneratedInt2TypeName() {
+    public void Source_whenReleasingFonts_doesNotDeleteRuntimeTextureWrapperImmediately() {
+        string sourcePath = PsVitaRepositoryPathResolver.ResolvePath("src", "platform", "psvita", "rendering", "PsVitaRenderManager2D.cpp");
+        string sourceCode = File.ReadAllText(sourcePath);
+
+        Assert.Contains("ReleaseTexture(texture);", sourceCode, StringComparison.Ordinal);
+        Assert.DoesNotContain("delete texture;", sourceCode, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Verifies the PS Vita 2D renderer uses the current generated-core UI int2 header and type name shape.
+    /// </summary>
+    [Fact]
+    public void Source_whenUsingGeneratedCoreScreenSizes_referencesCurrentGeneratedInt2TypeName() {
         string headerPath = PsVitaRepositoryPathResolver.ResolvePath("src", "platform", "psvita", "rendering", "PsVitaRenderManager2D.hpp");
         string sourcePath = PsVitaRepositoryPathResolver.ResolvePath("src", "platform", "psvita", "rendering", "PsVitaRenderManager2D.cpp");
         string headerSource = File.ReadAllText(headerPath);
         string sourceCode = File.ReadAllText(sourcePath);
 
-        Assert.Contains("#include \"helengine_int2.hpp\"", headerSource, StringComparison.Ordinal);
-        Assert.Contains("#include \"helengine_int2.hpp\"", sourceCode, StringComparison.Ordinal);
-        Assert.DoesNotContain("#include \"int2.hpp\"", headerSource, StringComparison.Ordinal);
-        Assert.DoesNotContain("#include \"int2.hpp\"", sourceCode, StringComparison.Ordinal);
+        Assert.Contains("#include \"int2.hpp\"", headerSource, StringComparison.Ordinal);
+        Assert.Contains("#include \"int2.hpp\"", sourceCode, StringComparison.Ordinal);
+        Assert.DoesNotContain("#include \"Int2.hpp\"", headerSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("#include \"Int2.hpp\"", sourceCode, StringComparison.Ordinal);
         Assert.Contains("const ::int2& size", headerSource, StringComparison.Ordinal);
         Assert.Contains("::int2 size = shape->get_Size();", sourceCode, StringComparison.Ordinal);
         Assert.Contains("::int2 innerSize", sourceCode, StringComparison.Ordinal);
-        Assert.Contains("::int2 spriteSize = sprite->get_Size();", sourceCode, StringComparison.Ordinal);
-        Assert.DoesNotContain(" const int2& size", headerSource, StringComparison.Ordinal);
-        Assert.DoesNotContain(" int2 size = shape->get_Size();", sourceCode, StringComparison.Ordinal);
+        Assert.DoesNotContain("const ::Int2& size", headerSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("::Int2 size = shape->get_Size();", sourceCode, StringComparison.Ordinal);
     }
 }

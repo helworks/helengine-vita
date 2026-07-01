@@ -14,19 +14,31 @@
 #include "CameraClearSettings.hpp"
 #include "ContentManager.hpp"
 #include "CoreInitializationOptions.hpp"
+#include "InputControlId.hpp"
+#include "InputControlKind.hpp"
+#include "InputDeviceKind.hpp"
 #include "ICamera.hpp"
 #include "ObjectManager.hpp"
+#include "PlatformInfo.hpp"
 #include "RuntimeContentProcessorIds.hpp"
 #include "RuntimeSceneLoadService.hpp"
 #include "SceneAsset.hpp"
+#include "SceneManager.hpp"
+#include "StandardPlatformAction.hpp"
+#include "StandardPlatformActionBinding.hpp"
+#include "StandardPlatformInputConfiguration.hpp"
+#include "runtime/native_exceptions.hpp"
 #include "platform/psvita/PsVitaInputBackend.hpp"
+#include "platform/psvita/PsVitaRuntimeDiagnosticsProvider.hpp"
 #include "platform/psvita/PsVitaRuntimeSceneCatalogFactory.hpp"
 #include "platform/psvita/rendering/PsVitaGxmRenderer.hpp"
 #include "platform/psvita/rendering/PsVitaRenderManager2D.hpp"
 #include "platform/psvita/rendering/PsVitaRenderManager3D.hpp"
-#if __has_include("runtime/runtime_scene_catalog_manifest.hpp") && __has_include("runtime/runtime_startup_manifest.hpp")
+#if __has_include("runtime/native_list.hpp") && __has_include("runtime/runtime_scene_catalog_manifest.hpp") && __has_include("runtime/runtime_standard_platform_input_manifest.hpp") && __has_include("runtime/runtime_startup_manifest.hpp")
 #define HELENGINE_PSVITA_HAS_RUNTIME_MANIFESTS 1
+#include "runtime/native_list.hpp"
 #include "runtime/runtime_scene_catalog_manifest.hpp"
+#include "runtime/runtime_standard_platform_input_manifest.hpp"
 #include "runtime/runtime_startup_manifest.hpp"
 #else
 #define HELENGINE_PSVITA_HAS_RUNTIME_MANIFESTS 0
@@ -47,6 +59,33 @@ namespace helengine::psvita {
         constexpr unsigned int PixelBytes = PixelCount * BytesPerPixel;
         constexpr unsigned int AlignedPixelBytes = ((PixelBytes + BufferAlignment - 1) / BufferAlignment) * BufferAlignment;
         constexpr unsigned int CornflowerBlue = 0xFFED9564;
+
+        /// Builds one runtime standard-platform input configuration from the generated manifest entries.
+        ::StandardPlatformInputConfiguration* BuildStandardPlatformInputConfiguration() {
+#if HELENGINE_PSVITA_HAS_RUNTIME_MANIFESTS
+            std::size_t count = 0;
+            const HERuntimeStandardPlatformActionEntry* manifestEntries = he_runtime_standard_platform_action_entries(&count);
+            if (manifestEntries == nullptr || count == 0) {
+                return ::StandardPlatformInputConfiguration::get_Empty();
+            }
+
+            List<::StandardPlatformActionBinding*>* bindings = new List<::StandardPlatformActionBinding*>(static_cast<int32_t>(count));
+            for (int32_t index = 0; index < static_cast<int32_t>(count); index++) {
+                const HERuntimeStandardPlatformActionEntry& manifestEntry = manifestEntries[index];
+                bindings->Add(new ::StandardPlatformActionBinding(
+                    static_cast<::StandardPlatformAction>(manifestEntry.ActionId),
+                    ::InputControlId(
+                        static_cast<::InputDeviceKind>(manifestEntry.DeviceKind),
+                        static_cast<::InputControlKind>(manifestEntry.ControlKind),
+                        manifestEntry.DeviceIndex,
+                        manifestEntry.ControlIndex)));
+            }
+
+            return new ::StandardPlatformInputConfiguration(bindings);
+#else
+            return ::StandardPlatformInputConfiguration::get_Empty();
+#endif
+        }
     }
 
     /// Ensures the PS Vita shared data directory exists before any boot trace writes attempt to create files inside it.
@@ -61,9 +100,11 @@ namespace helengine::psvita {
 #if HELENGINE_PSVITA_HAS_GENERATED_CORE
         , EngineCore(nullptr)
         , EngineOptions(nullptr)
+        , EnginePlatformInfo(nullptr)
         , EngineRenderManager3D(nullptr)
         , EngineRenderManager2D(nullptr)
         , EngineInputBackend(nullptr)
+        , EngineRuntimeDiagnosticsProvider(nullptr)
         , GxmRenderer(nullptr)
 #endif
     {
@@ -97,6 +138,9 @@ namespace helengine::psvita {
                 PresentFrame();
             }
 #endif
+        } catch (const Exception* ex) {
+            AppendBootTrace(("Run: managed exception: " + std::string(ex != nullptr ? ex->what() : "null managed exception")).c_str());
+            return 1;
         } catch (const std::exception& ex) {
             AppendBootTrace(("Run: exception: " + std::string(ex.what())).c_str());
             return 1;
@@ -173,14 +217,21 @@ namespace helengine::psvita {
         EngineOptions->set_UpdateListInitialCapacity(64);
         EngineOptions->set_RenderList2DInitialCapacity(8);
         EngineOptions->set_RenderList3DInitialCapacity(64);
+        EngineOptions->set_CommitPendingSceneOperationsDuringDraw(false);
+        EngineOptions->set_StandardPlatformInputConfiguration(BuildStandardPlatformInputConfiguration());
+        EngineRuntimeDiagnosticsProvider = new PsVitaRuntimeDiagnosticsProvider();
+        EngineOptions->set_RuntimeDiagnosticsProvider(EngineRuntimeDiagnosticsProvider);
+        PsVitaRuntimeSceneCatalogFactory runtimeSceneCatalogFactory;
+        EngineOptions->set_SceneCatalog(runtimeSceneCatalogFactory.Build());
 
+        EnginePlatformInfo = new PlatformInfo("PS Vita", "homebrew");
         EngineRenderManager3D = new PsVitaRenderManager3D();
         EngineRenderManager2D = new PsVitaRenderManager2D();
         static_cast<PsVitaRenderManager3D*>(EngineRenderManager3D)->SetGxmRenderer(GxmRenderer);
         static_cast<PsVitaRenderManager2D*>(EngineRenderManager2D)->SetGxmRenderer(GxmRenderer);
         EngineInputBackend = new PsVitaInputBackend();
         EngineRenderManager3D->AddWindow(0, ScreenWidth, ScreenHeight);
-        EngineCore->Initialize(EngineRenderManager3D, EngineRenderManager2D, EngineInputBackend, EngineOptions);
+        EngineCore->Initialize(EngineRenderManager3D, EngineRenderManager2D, EngineInputBackend, EnginePlatformInfo, EngineOptions);
         AppendBootTrace("InitializeCore: success");
     }
 
@@ -193,42 +244,73 @@ namespace helengine::psvita {
             throw std::runtime_error("PS Vita runtime startup manifest did not define a startup scene.");
         }
 
-        ContentManager* contentManager = EngineCore->GetContentManager();
-        if (contentManager == nullptr) {
-            throw std::runtime_error("PS Vita runtime content manager was not initialized before startup scene loading.");
+        std::size_t runtimeSceneCount = 0;
+        const HERuntimeSceneCatalogEntry* runtimeSceneEntries = he_runtime_scene_catalog_entries(&runtimeSceneCount);
+        if (runtimeSceneEntries == nullptr || runtimeSceneCount == 0) {
+            throw std::runtime_error("PS Vita runtime scene catalog manifest did not contain any entries.");
         }
 
-        RuntimeSceneLoadService* sceneLoadService = EngineCore->get_SceneLoadService();
-        if (sceneLoadService == nullptr) {
-            throw std::runtime_error("PS Vita runtime scene load service was not initialized before startup scene loading.");
+        std::string startupSceneId;
+        for (std::size_t index = 0; index < runtimeSceneCount; index++) {
+            const HERuntimeSceneCatalogEntry& runtimeSceneEntry = runtimeSceneEntries[index];
+            if (runtimeSceneEntry.CookedRelativePath != nullptr && std::string(runtimeSceneEntry.CookedRelativePath) == configuredStartupSceneRelativePath) {
+                startupSceneId = runtimeSceneEntry.SceneId;
+                break;
+            }
         }
 
-        SceneAsset* startupScene = contentManager->Load<SceneAsset*>(configuredStartupSceneRelativePath, RuntimeContentProcessorIds::SceneAsset);
-        sceneLoadService->Load(startupScene);
+        if (startupSceneId.empty()) {
+            throw std::runtime_error("PS Vita runtime startup scene path was not found in the runtime scene catalog manifest.");
+        }
+
+        if (EngineCore->get_SceneManager() == nullptr) {
+            throw std::runtime_error("PS Vita runtime scene manager was not initialized before startup scene loading.");
+        }
+
+        EngineCore->get_SceneManager()->LoadScene(startupSceneId, SceneLoadMode::Single);
         AppendBootTrace("LoadStartupScene: success");
 #endif
     }
 
     /// Advances the runtime update and draw loop while preserving the milestone boot frame.
     void PsVitaBootHost::RunMainLoop() {
-        AppendBootTrace("RunMainLoop: first update");
-        EngineCore->Update();
-        AppendBootTrace("RunMainLoop: first begin frame");
-        GxmRenderer->BeginFrame(ResolveActiveCameraClearColorAbgr());
-        AppendBootTrace("RunMainLoop: first draw3d");
-        EngineCore->Draw();
-        AppendBootTrace("RunMainLoop: first draw2d");
-        EngineRenderManager2D->Draw();
-        AppendBootTrace("RunMainLoop: first present");
-        PresentFrame();
-        AppendBootTrace("RunMainLoop: first present complete");
-
+        bool firstFrame = true;
         while (true) {
+            if (firstFrame) {
+                AppendBootTrace("RunMainLoop: first update");
+            }
             EngineCore->Update();
+            if (firstFrame) {
+                AppendBootTrace("RunMainLoop: first begin frame");
+            }
             GxmRenderer->BeginFrame(ResolveActiveCameraClearColorAbgr());
+            if (firstFrame) {
+                AppendBootTrace("RunMainLoop: first draw3d");
+            }
             EngineCore->Draw();
+            if (firstFrame) {
+                AppendBootTrace("RunMainLoop: first draw2d");
+            }
             EngineRenderManager2D->Draw();
+            if (firstFrame) {
+                AppendBootTrace("RunMainLoop: first present");
+            }
             PresentFrame();
+            if (firstFrame) {
+                AppendBootTrace("RunMainLoop: first present complete");
+                AppendBootTrace("RunMainLoop: first release flush");
+            }
+            if (EngineRenderManager2D != nullptr) {
+                static_cast<PsVitaRenderManager2D*>(EngineRenderManager2D)->NotifyFramePresented();
+                EngineRenderManager2D->FlushReleasedTextures();
+            }
+            if (firstFrame) {
+                AppendBootTrace("RunMainLoop: first frame boundary");
+            }
+            EngineCore->CompleteFrameBoundary();
+            if (firstFrame) {
+                firstFrame = false;
+            }
         }
     }
 

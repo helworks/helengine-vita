@@ -18,6 +18,7 @@
 #include "IRoundedRectDrawable2D.hpp"
 #include "ISpriteDrawable2D.hpp"
 #include "ITextDrawable2D.hpp"
+#include "TextLayoutAlignmentUtils.hpp"
 #include "TextLayoutUtils.hpp"
 #include "byte4.hpp"
 #include "float3.hpp"
@@ -166,16 +167,35 @@ namespace helengine::psvita {
         ::RuntimeTexture* texture = font->get_Texture();
         if (texture != nullptr) {
             ReleaseTexture(texture);
-            delete texture;
         }
 
-        font->Dispose();
-        delete font;
+        ReleasedFonts.push_back(font);
+    }
+
+    /// Marks that one presented PS Vita frame completed so deferred texture and font destruction can advance only from the host post-present safe point.
+    void PsVitaRenderManager2D::NotifyFramePresented() {
+        PresentedFramePendingFlush = true;
+        TextureCache.NotifyFramePresented();
     }
 
     /// Flushes deferred PS Vita runtime texture deletions once the renderer reaches a safe boundary before the next scene begins loading.
     void PsVitaRenderManager2D::FlushReleasedTextures() {
+        if (!PresentedFramePendingFlush) {
+            return;
+        }
+
+        PresentedFramePendingFlush = false;
         TextureCache.FlushReleasedTextures();
+        while (!ReleasedFonts.empty()) {
+            ::FontAsset* releasedFont = ReleasedFonts.back();
+            ReleasedFonts.pop_back();
+            if (releasedFont == nullptr) {
+                continue;
+            }
+
+            releasedFont->Dispose();
+            delete releasedFont;
+        }
     }
 
     /// Draws a rounded rectangle request.
@@ -186,8 +206,8 @@ namespace helengine::psvita {
             return;
         }
 
-        ::int2* size = shape->get_Size();
-        if (size == nullptr || size->X <= 0 || size->Y <= 0) {
+        ::int2 size = shape->get_Size();
+        if (size.X <= 0 || size.Y <= 0) {
             return;
         }
 
@@ -198,23 +218,23 @@ namespace helengine::psvita {
             0.0,
             std::min(
                 static_cast<double>(shape->get_Radius()),
-                std::min(static_cast<double>(size->X), static_cast<double>(size->Y)) * 0.5));
+                std::min(static_cast<double>(size.X), static_cast<double>(size.Y)) * 0.5));
 
         if (borderThickness > 0) {
             AppendFilledRoundedRect(
                 position,
-                *size,
+                size,
                 clampedRadius,
                 PackColorAbgr(shape->get_BorderColor()),
                 renderOrder);
         }
 
-        ::int2 innerSize(size->X - (borderThickness * 2), size->Y - (borderThickness * 2));
+        ::int2 innerSize(size.X - (borderThickness * 2), size.Y - (borderThickness * 2));
         if (innerSize.X <= 0 || innerSize.Y <= 0) {
             if (borderThickness <= 0) {
                 AppendFilledRoundedRect(
                     position,
-                    *size,
+                    size,
                     clampedRadius,
                     PackColorAbgr(shape->get_FillColor()),
                     renderOrder);
@@ -249,9 +269,9 @@ namespace helengine::psvita {
             return;
         }
 
-        ::int2* spriteSizeValue = sprite->get_Size();
-        const int32_t spriteWidthPixels = spriteSizeValue != nullptr ? spriteSizeValue->X : 0;
-        const int32_t spriteHeightPixels = spriteSizeValue != nullptr ? spriteSizeValue->Y : 0;
+        ::int2 spriteSizeValue = sprite->get_Size();
+        const int32_t spriteWidthPixels = spriteSizeValue.X;
+        const int32_t spriteHeightPixels = spriteSizeValue.Y;
         double spriteWidth = spriteWidthPixels > 0
             ? static_cast<double>(spriteWidthPixels)
             : static_cast<double>(texture->get_Width());
@@ -262,10 +282,17 @@ namespace helengine::psvita {
             return;
         }
 
-        float3 position = sprite->get_Parent()->get_Position();
+        ::Entity* parent = sprite->get_Parent();
+        float3 position = parent->get_Position();
+        float3 scale = parent->get_Scale();
         float4 sourceRect = sprite->get_SourceRect();
         byte4 color = sprite->get_Color();
-        double rotation = static_cast<double>(sprite->get_Rotation());
+        spriteWidth *= static_cast<double>(scale.X);
+        spriteHeight *= static_cast<double>(scale.Y);
+        float3 rotatedRight = float4::RotateVector(float3::get_UnitX(), parent->get_Orientation());
+        double rotation = std::atan2(
+            static_cast<double>(rotatedRight.Y),
+            static_cast<double>(rotatedRight.X));
         double halfWidth = spriteWidth * 0.5;
         double halfHeight = spriteHeight * 0.5;
         double centerX = static_cast<double>(position.X) + halfWidth;
@@ -335,9 +362,9 @@ namespace helengine::psvita {
         const double fontScale = 1.0;
         if (text->get_WrapText()) {
             int32_t maxWidth = 1;
-            ::int2* textSizeValue = text->get_Size();
-            if (textSizeValue != nullptr && textSizeValue->X > 0) {
-                maxWidth = std::max(static_cast<int32_t>(1), static_cast<int32_t>(std::round(static_cast<double>(textSizeValue->X) / fontScale)));
+            ::int2 textSizeValue = text->get_Size();
+            if (textSizeValue.X > 0) {
+                maxWidth = std::max(static_cast<int32_t>(1), static_cast<int32_t>(std::round(static_cast<double>(textSizeValue.X) / fontScale)));
             }
 
             content = TextLayoutUtils::WrapText(content, font, maxWidth);
@@ -363,36 +390,18 @@ namespace helengine::psvita {
         std::vector<double> lineWidths;
         lineWidths.reserve(lines.size());
         for (const std::string& line : lines) {
-            double lineWidth = 0.0;
-            for (char character : line) {
-                if (character == ' ') {
-                    lineWidth += static_cast<double>(font->get_FontInfo()->get_SpaceWidth()) * fontScale;
-                    continue;
-                }
-
-                FontChar glyph;
-                if (font->get_Characters() == nullptr || !font->get_Characters()->TryGetValue(character, glyph)) {
-                    continue;
-                }
-
-                double glyphWidth = std::max(1.0, std::round(static_cast<double>(glyph.SourceRect.Z) * static_cast<double>(font->get_AtlasWidth()) * fontScale));
-                double advanceWidth = glyph.AdvanceWidth > 0.0f
-                    ? static_cast<double>(glyph.AdvanceWidth) * fontScale
-                    : glyphWidth;
-                lineWidth += advanceWidth;
-            }
-
-            lineWidths.push_back(lineWidth);
+            lineWidths.push_back(TextLayoutAlignmentUtils::MeasureVisibleLineWidth(
+                line,
+                font,
+                fontScale,
+                static_cast<double>(font->get_AtlasWidth())));
         }
 
         float3 position = text->get_Parent()->get_Position();
         double baseX = static_cast<double>(position.X);
         double baseY = static_cast<double>(position.Y);
         double lineHeight = std::max(static_cast<double>(font->get_LineHeight()) * fontScale, 1.0);
-        ::int2* layoutSizeValue = text->get_Size();
-        double layoutWidth = layoutSizeValue != nullptr && layoutSizeValue->X > 0
-            ? static_cast<double>(layoutSizeValue->X)
-            : 0.0;
+        ::int2 layoutSizeValue = text->get_Size();
         byte4 color = text->get_Color();
         std::uint32_t packedColor = (static_cast<std::uint32_t>(color.W) << 24)
             | (static_cast<std::uint32_t>(color.Z) << 16)
@@ -402,7 +411,10 @@ namespace helengine::psvita {
         for (std::size_t lineIndex = 0; lineIndex < lines.size(); ++lineIndex) {
             const std::string& line = lines[lineIndex];
             double offsetX = 0.0;
-            double lineOffsetX = 0.0;
+            double lineOffsetX = TextLayoutAlignmentUtils::ResolveHorizontalOffset(
+                text->get_Alignment(),
+                layoutSizeValue.X,
+                lineWidths[lineIndex]);
 
             double lineOffsetY = static_cast<double>(lineIndex) * lineHeight;
             for (char character : line) {
@@ -619,6 +631,7 @@ namespace helengine::psvita {
             | (static_cast<std::uint32_t>(color.Y) << 8)
             | static_cast<std::uint32_t>(color.X);
     }
+
 }
 
 #endif

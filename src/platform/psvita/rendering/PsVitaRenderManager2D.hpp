@@ -42,6 +42,9 @@ namespace helengine::psvita {
         /// Releases one PS Vita font asset and its native-owned object graph.
         void ReleaseFont(::FontAsset* font);
 
+        /// Marks that one presented PS Vita frame completed so deferred texture and font release work can advance at the post-present safe point.
+        void NotifyFramePresented();
+
         /// Flushes deferred PS Vita runtime texture deletions once the renderer reaches a safe boundary before the next scene begins loading.
         void FlushReleasedTextures();
 
@@ -107,6 +110,12 @@ namespace helengine::psvita {
 
         /// Stores the queued sprite quads built during the current frame.
         std::vector<rendering::PsVitaQueuedQuad> QueuedQuads;
+
+        /// Stores font assets whose disposal must wait until deferred texture releases reach the explicit flush boundary.
+        std::vector<::FontAsset*> ReleasedFonts;
+
+        /// Stores whether one presented PS Vita frame completed since the last deferred-release flush attempt.
+        bool PresentedFramePendingFlush = false;
 
         /// Stores the runtime texture cache used by the temporary PS Vita 2D renderer.
         rendering::PsVitaTextureCache TextureCache;
