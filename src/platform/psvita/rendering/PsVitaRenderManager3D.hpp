@@ -20,6 +20,7 @@ template<typename T>
 class Array;
 
 #include "IRenderVisitor3D.hpp"
+#include "MaterialCullMode.hpp"
 #include "RenderManager3D.hpp"
 #include "float3.hpp"
 #include "float4.hpp"
@@ -90,6 +91,16 @@ namespace helengine::psvita {
         /// Resolves the Lambert fallback base color that should be used for one runtime submesh draw.
         static std::uint32_t ResolveLambertBaseColor(::MeshComponent* meshComponent, int32_t submeshIndex);
 
+        /// Resolves the cull mode that should be applied to one runtime submesh in the Lambert fallback path.
+        static ::MaterialCullMode ResolveSubmeshCullMode(::MeshComponent* meshComponent, int32_t submeshIndex);
+
+        /// Returns whether one projected triangle should be discarded before painter sorting based on material cull mode and screen-space winding.
+        static bool ShouldCullProjectedTriangle(
+            ::MaterialCullMode cullMode,
+            const ::float3& projectedVertex0,
+            const ::float3& projectedVertex1,
+            const ::float3& projectedVertex2);
+
         /// Builds one packed ABGR vertex color from the supplied base color and Lambert lighting inputs.
         static std::uint32_t BuildLambertVertexColor(
             std::uint32_t baseColorAbgr,
@@ -101,6 +112,9 @@ namespace helengine::psvita {
 
         /// Builds one Vita-specific runtime material from one cooked compiled-shader material payload.
         static ::RuntimeMaterial* BuildCompiledShaderRuntimeMaterial(const rendering::PsVitaCompiledShaderMaterial& materialAsset);
+
+        /// Resolves the runtime material that should drive one runtime submesh draw.
+        static ::RuntimeMaterial* ResolveSubmeshMaterial(::MeshComponent* meshComponent, int32_t submeshIndex);
 
         /// Resolves the solid-color mesh base color that should be used for one runtime submesh draw.
         static std::uint32_t ResolveSolidColorSubmeshColor(::MeshComponent* meshComponent, int32_t submeshIndex);

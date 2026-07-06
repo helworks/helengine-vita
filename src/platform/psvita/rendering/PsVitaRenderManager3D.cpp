@@ -483,6 +483,7 @@ namespace helengine::psvita {
 
             const std::vector<std::uint32_t>& triangleIndices = submesh->GetTriangleIndices();
             const std::uint32_t baseColorAbgr = ResolveLambertBaseColor(meshComponent, submeshIndex);
+            const ::MaterialCullMode cullMode = ResolveSubmeshCullMode(meshComponent, submeshIndex);
             for (std::size_t index = 0; index + 2 < triangleIndices.size(); index += 3) {
                 attemptedTriangleCount++;
                 const std::uint32_t triangleIndex0 = triangleIndices[index];
@@ -527,6 +528,9 @@ namespace helengine::psvita {
                 if (!TryProjectToScreen(localPosition0, worldViewProjection, ActiveViewport, projectedVertex0)
                     || !TryProjectToScreen(localPosition1, worldViewProjection, ActiveViewport, projectedVertex1)
                     || !TryProjectToScreen(localPosition2, worldViewProjection, ActiveViewport, projectedVertex2)) {
+                    continue;
+                }
+                if (ShouldCullProjectedTriangle(cullMode, projectedVertex0, projectedVertex1, projectedVertex2)) {
                     continue;
                 }
 
@@ -753,6 +757,40 @@ namespace helengine::psvita {
         return ResolveSolidColorSubmeshColor(meshComponent, submeshIndex);
     }
 
+    /// Resolves the cull mode that should be applied to one runtime submesh in the Lambert fallback path.
+    ::MaterialCullMode PsVitaRenderManager3D::ResolveSubmeshCullMode(::MeshComponent* meshComponent, int32_t submeshIndex) {
+        ::RuntimeMaterial* material = ResolveSubmeshMaterial(meshComponent, submeshIndex);
+        if (material == nullptr || material->get_RenderState() == nullptr) {
+            return ::MaterialCullMode::Back;
+        }
+
+        return material->get_RenderState()->get_CullMode();
+    }
+
+    /// Returns whether one projected triangle should be discarded before painter sorting based on material cull mode and screen-space winding.
+    bool PsVitaRenderManager3D::ShouldCullProjectedTriangle(
+        ::MaterialCullMode cullMode,
+        const ::float3& projectedVertex0,
+        const ::float3& projectedVertex1,
+        const ::float3& projectedVertex2) {
+        const double edge01X = static_cast<double>(projectedVertex1.X) - static_cast<double>(projectedVertex0.X);
+        const double edge01Y = static_cast<double>(projectedVertex1.Y) - static_cast<double>(projectedVertex0.Y);
+        const double edge02X = static_cast<double>(projectedVertex2.X) - static_cast<double>(projectedVertex0.X);
+        const double edge02Y = static_cast<double>(projectedVertex2.Y) - static_cast<double>(projectedVertex0.Y);
+        const double signedAreaTwice = (edge01X * edge02Y) - (edge01Y * edge02X);
+        if (std::abs(signedAreaTwice) <= 0.01) {
+            return true;
+        }
+        if (cullMode == ::MaterialCullMode::None) {
+            return false;
+        }
+        if (cullMode == ::MaterialCullMode::Front) {
+            return signedAreaTwice < 0.0;
+        }
+
+        return signedAreaTwice > 0.0;
+    }
+
     /// Builds one packed ABGR vertex color from the supplied base color and Lambert lighting inputs.
     std::uint32_t PsVitaRenderManager3D::BuildLambertVertexColor(
         std::uint32_t baseColorAbgr,
@@ -786,18 +824,23 @@ namespace helengine::psvita {
             | (alpha << 24u);
     }
 
-    /// Resolves the solid-color mesh base color that should be used for one runtime submesh draw.
-    std::uint32_t PsVitaRenderManager3D::ResolveSolidColorSubmeshColor(::MeshComponent* meshComponent, int32_t submeshIndex) {
+    /// Resolves the runtime material that should drive one runtime submesh draw.
+    ::RuntimeMaterial* PsVitaRenderManager3D::ResolveSubmeshMaterial(::MeshComponent* meshComponent, int32_t submeshIndex) {
         if (meshComponent == nullptr) {
-            return 0xFFFFFFFFu;
+            return nullptr;
         }
 
         Array<::RuntimeMaterial*>* materials = meshComponent->get_Materials();
-        ::RuntimeMaterial* material = materials != nullptr && submeshIndex >= 0 && submeshIndex < materials->Length
+        return materials != nullptr && submeshIndex >= 0 && submeshIndex < materials->Length
             ? (*materials)[submeshIndex]
             : (materials != nullptr && materials->Length > 0
                 ? (*materials)[0]
                 : nullptr);
+    }
+
+    /// Resolves the solid-color mesh base color that should be used for one runtime submesh draw.
+    std::uint32_t PsVitaRenderManager3D::ResolveSolidColorSubmeshColor(::MeshComponent* meshComponent, int32_t submeshIndex) {
+        ::RuntimeMaterial* material = ResolveSubmeshMaterial(meshComponent, submeshIndex);
         if (material == nullptr) {
             return 0xFFFFFFFFu;
         }

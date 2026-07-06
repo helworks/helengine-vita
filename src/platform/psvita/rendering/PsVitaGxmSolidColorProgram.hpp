@@ -164,6 +164,11 @@ namespace helengine::psvita::rendering {
         /// Stores the loaded shader-compiler module identifier for the current process lifetime.
         /// </summary>
         SceUID ShaderCompilerModuleId;
+
+        /// <summary>
+        /// Stores whether one prior initialization attempt has already failed and should no longer be retried during the current process lifetime.
+        /// </summary>
+        bool InitializationFailed;
     };
 }
 

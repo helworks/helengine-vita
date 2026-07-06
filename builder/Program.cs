@@ -27,7 +27,24 @@ public static class Program {
             return 0;
         }
 
-        Console.WriteLine("helengine.psvita.builder --describe|--smoke-test");
+        if (args.Length == 3 && string.Equals(args[0], "--ensure-runtime-support", StringComparison.OrdinalIgnoreCase)) {
+            string generatedCoreRootPath = args[1];
+            string cookedSceneAssetPath = args[2];
+            if (string.IsNullOrWhiteSpace(generatedCoreRootPath)) {
+                throw new ArgumentException("Generated core root path must be provided.", nameof(args));
+            }
+
+            if (string.IsNullOrWhiteSpace(cookedSceneAssetPath)) {
+                throw new ArgumentException("Cooked scene asset path must be provided.", nameof(args));
+            }
+
+            PsVitaGeneratedRuntimeComponentSupportWriter writer = new();
+            writer.EnsureGeneratedRuntimeSupport(generatedCoreRootPath, [cookedSceneAssetPath]);
+            Console.WriteLine("ok");
+            return 0;
+        }
+
+        Console.WriteLine("helengine.psvita.builder --describe|--smoke-test|--ensure-runtime-support <generated-core-root> <cooked-scene-asset>");
         return 0;
     }
 }

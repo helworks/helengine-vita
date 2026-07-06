@@ -391,20 +391,31 @@ namespace helengine::psvita::rendering {
         , PatcherFragmentUsseMemory(nullptr)
         , PatcherFragmentUsseMemorySize(static_cast<std::size_t>(SolidColorShaderPatcherFragmentUsseSize))
         , PatcherFragmentUsseOffset(0u)
-        , ShaderCompilerModuleId(-1) {
+        , ShaderCompilerModuleId(-1)
+        , InitializationFailed(false) {
     }
 
     /// <summary>
     /// Compiles, patches, and binds the PS Vita solid-color shader programs needed by runtime mesh draws.
     /// </summary>
     bool PsVitaGxmSolidColorProgram::Initialize() {
+        if (IsReady()) {
+            return true;
+        }
+
+        if (InitializationFailed) {
+            return false;
+        }
+
         Reset();
 
         if (_vita2d_context == nullptr) {
+            InitializationFailed = true;
             return false;
         }
 
         if (!TryLoadShaderCompilerModule(&ShaderCompilerModuleId)) {
+            InitializationFailed = true;
             return false;
         }
 
@@ -416,6 +427,7 @@ namespace helengine::psvita::rendering {
             &VertexProgramDataSize,
             compileFailureMessage)) {
             Reset();
+            InitializationFailed = true;
             return false;
         }
 
@@ -426,11 +438,13 @@ namespace helengine::psvita::rendering {
             &FragmentProgramDataSize,
             compileFailureMessage)) {
             Reset();
+            InitializationFailed = true;
             return false;
         }
 
         if (!TryCreateMappedShaderPatcherBuffer(PatcherBufferMemorySize, &PatcherBufferMemory, SCE_GXM_MEMORY_ATTRIB_RW)) {
             Reset();
+            InitializationFailed = true;
             return false;
         }
 
@@ -439,6 +453,7 @@ namespace helengine::psvita::rendering {
             &PatcherVertexUsseMemory,
             &PatcherVertexUsseOffset)) {
             Reset();
+            InitializationFailed = true;
             return false;
         }
 
@@ -447,6 +462,7 @@ namespace helengine::psvita::rendering {
             &PatcherFragmentUsseMemory,
             &PatcherFragmentUsseOffset)) {
             Reset();
+            InitializationFailed = true;
             return false;
         }
 
@@ -466,6 +482,7 @@ namespace helengine::psvita::rendering {
 
         if (sceGxmShaderPatcherCreate(&shaderPatcherParams, &ShaderPatcher) < 0 || ShaderPatcher == nullptr) {
             Reset();
+            InitializationFailed = true;
             return false;
         }
 
@@ -473,6 +490,7 @@ namespace helengine::psvita::rendering {
         const SceGxmProgram* fragmentProgramGxp = static_cast<const SceGxmProgram*>(FragmentProgramData);
         if (vertexProgramGxp == nullptr || fragmentProgramGxp == nullptr) {
             Reset();
+            InitializationFailed = true;
             return false;
         }
 
@@ -481,6 +499,7 @@ namespace helengine::psvita::rendering {
             || sceGxmShaderPatcherRegisterProgram(ShaderPatcher, fragmentProgramGxp, &FragmentProgramId) < 0
             || FragmentProgramId == nullptr) {
             Reset();
+            InitializationFailed = true;
             return false;
         }
 
@@ -489,6 +508,7 @@ namespace helengine::psvita::rendering {
         BaseColorParameter = sceGxmProgramFindParameterByName(fragmentProgramGxp, ForwardSolidColorBaseColorParameterName);
         if (positionParameter == nullptr || WorldViewProjectionParameter == nullptr || BaseColorParameter == nullptr) {
             Reset();
+            InitializationFailed = true;
             return false;
         }
 
@@ -515,6 +535,7 @@ namespace helengine::psvita::rendering {
             &VertexProgram) < 0
             || VertexProgram == nullptr) {
             Reset();
+            InitializationFailed = true;
             return false;
         }
 
@@ -528,10 +549,12 @@ namespace helengine::psvita::rendering {
             &FragmentProgram) < 0
             || FragmentProgram == nullptr) {
             Reset();
+            InitializationFailed = true;
             return false;
         }
 
         Context = _vita2d_context;
+        InitializationFailed = false;
         return IsReady();
     }
 

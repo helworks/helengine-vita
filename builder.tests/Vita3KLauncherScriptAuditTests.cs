@@ -12,7 +12,7 @@ public sealed class Vita3KLauncherScriptAuditTests {
     /// Verifies the launcher script exists and exposes the explicit VPK-path contract required by the standardized emulator workflow.
     /// </summary>
     [Fact]
-    public void Script_whenLaunchingVita3K_existsAndRequiresExplicitVpkPath() {
+    public void Script_whenLaunchingVita3K_existsAndRequiresExplicitArtifactPath() {
         string scriptPath = PsVitaRepositoryPathResolver.ResolvePath("tools", "launch-vita3k.ps1");
 
         Assert.True(File.Exists(scriptPath));
@@ -21,6 +21,7 @@ public sealed class Vita3KLauncherScriptAuditTests {
         Assert.Contains("param", scriptSource, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("VpkPath", scriptSource, StringComparison.Ordinal);
         Assert.Contains("KeepInstalledTitle", scriptSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("ArtifactPath", scriptSource, StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -64,5 +65,18 @@ public sealed class Vita3KLauncherScriptAuditTests {
         Assert.True(
             scriptSource.IndexOf("Stop-Process -Force", StringComparison.Ordinal) < scriptSource.IndexOf("Start-Process -FilePath $Vita3KPath", StringComparison.Ordinal),
             "The launcher must stop existing Vita3K processes before starting the new instance.");
+    }
+
+    /// <summary>
+    /// Ensures the root README documents the canonical launcher entrypoint.
+    /// </summary>
+    [Fact]
+    public void Readme_DocumentsCanonicalLauncherWorkflow() {
+        string readmeSource = File.ReadAllText(PsVitaRepositoryPathResolver.ResolvePath("README.md"));
+
+        Assert.Contains("launch-vita3k.ps1", readmeSource, StringComparison.Ordinal);
+        Assert.Contains("-VpkPath", readmeSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("launch_in_emulator.ps1", readmeSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("-ArtifactPath", readmeSource, StringComparison.Ordinal);
     }
 }

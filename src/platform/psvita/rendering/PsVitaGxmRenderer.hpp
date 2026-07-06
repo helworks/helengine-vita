@@ -58,6 +58,9 @@ namespace helengine::psvita::rendering {
         std::size_t GetSubmittedQuadCount() const;
 
     private:
+        /// Returns the padded native Vita texture dimension used to avoid odd-sized runtime uploads that destabilize Vita3K's texture destroy path.
+        static std::uint32_t CalculatePaddedTextureDimension(std::uint32_t textureDimension);
+
         /// Lazily uploads one runtime texture into a native PS Vita texture allocation before the first draw that references it.
         void EnsureUploaded(PsVitaRuntimeTexture* runtimeTexture);
 

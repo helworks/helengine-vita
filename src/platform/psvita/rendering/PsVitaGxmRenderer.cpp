@@ -1,8 +1,10 @@
 #include "platform/psvita/rendering/PsVitaGxmRenderer.hpp"
 
+#include <cstdio>
 #include <cstring>
 #include <memory>
 #include <stdexcept>
+#include <string>
 
 #include <psp2/gxm.h>
 #include <vita2d.h>
@@ -16,6 +18,19 @@ namespace helengine::psvita::rendering {
     namespace {
         /// Keeps the experimental runtime-compiled solid-color program disabled until real-hardware validation is ready because Vita3K currently crashes inside the libshacccg path.
         constexpr bool EnableRuntimeCompiledSolidColorProgram = false;
+        constexpr const char* BootTracePath = "ux0:/data/helengine_psvita_boot.log";
+
+        /// Appends one PS Vita renderer diagnostics line to the persisted boot trace.
+        void AppendRendererTrace(const std::string& message) {
+            std::FILE* file = std::fopen(BootTracePath, "a");
+            if (file == nullptr) {
+                return;
+            }
+
+            std::fputs(message.c_str(), file);
+            std::fputc('\n', file);
+            std::fclose(file);
+        }
     }
 
     /// Creates one uninitialized PS Vita GXM renderer foundation.
@@ -228,6 +243,20 @@ namespace helengine::psvita::rendering {
         return SubmittedQuadCount;
     }
 
+    /// Returns the padded native Vita texture dimension used to avoid odd-sized runtime uploads that destabilize Vita3K's texture destroy path.
+    std::uint32_t PsVitaGxmRenderer::CalculatePaddedTextureDimension(std::uint32_t textureDimension) {
+        if (textureDimension == 0u) {
+            throw std::runtime_error("PS Vita GPU upload requires positive texture dimensions.");
+        }
+
+        std::uint32_t paddedDimension = 1u;
+        while (paddedDimension < textureDimension) {
+            paddedDimension <<= 1u;
+        }
+
+        return paddedDimension;
+    }
+
     /// Lazily uploads one runtime texture into a native PS Vita texture allocation before the first draw that references it.
     void PsVitaGxmRenderer::EnsureUploaded(PsVitaRuntimeTexture* runtimeTexture) {
         if (runtimeTexture == nullptr) {
@@ -240,11 +269,13 @@ namespace helengine::psvita::rendering {
 
         std::uint32_t textureWidth = runtimeTexture->GetTextureWidthPixels();
         std::uint32_t textureHeight = runtimeTexture->GetTextureHeightPixels();
+        std::uint32_t nativeTextureWidth = CalculatePaddedTextureDimension(textureWidth);
+        std::uint32_t nativeTextureHeight = CalculatePaddedTextureDimension(textureHeight);
         if (textureWidth == 0u || textureHeight == 0u || !runtimeTexture->HasPixels()) {
             throw std::runtime_error("PS Vita GPU upload requires non-empty runtime texture pixels and dimensions.");
         }
 
-        vita2d_texture* nativeTexture = vita2d_create_empty_texture_format(textureWidth, textureHeight, SCE_GXM_TEXTURE_FORMAT_A8B8G8R8);
+        vita2d_texture* nativeTexture = vita2d_create_empty_texture_format(nativeTextureWidth, nativeTextureHeight, SCE_GXM_TEXTURE_FORMAT_A8B8G8R8);
         if (nativeTexture == nullptr) {
             throw std::runtime_error("PS Vita GPU upload failed to allocate one native texture.");
         }
@@ -256,11 +287,15 @@ namespace helengine::psvita::rendering {
         }
 
         std::size_t stridePixels = static_cast<std::size_t>(vita2d_texture_get_stride(nativeTexture)) / sizeof(std::uint32_t);
-        if (stridePixels < textureWidth) {
+        if (stridePixels < nativeTextureWidth) {
             vita2d_free_texture(nativeTexture);
             throw std::runtime_error("PS Vita GPU upload received one native texture stride smaller than the authored width.");
         }
 
+        std::memset(
+            nativePixels,
+            0,
+            stridePixels * static_cast<std::size_t>(nativeTextureHeight) * sizeof(std::uint32_t));
         const std::uint32_t* sourcePixels = runtimeTexture->GetPixelsAbgr8888();
         for (std::uint32_t rowIndex = 0u; rowIndex < textureHeight; ++rowIndex) {
             std::uint32_t* destinationRow = nativePixels + (static_cast<std::size_t>(rowIndex) * stridePixels);
@@ -271,8 +306,24 @@ namespace helengine::psvita::rendering {
         vita2d_texture_set_filters(nativeTexture, SCE_GXM_TEXTURE_FILTER_LINEAR, SCE_GXM_TEXTURE_FILTER_LINEAR);
 
         std::unique_ptr<PsVitaGpuTexture> gpuTexture = std::make_unique<PsVitaGpuTexture>();
-        gpuTexture->SetNativeTexture(nativeTexture, textureWidth, textureHeight);
+        gpuTexture->SetNativeTexture(nativeTexture, nativeTextureWidth, nativeTextureHeight);
         runtimeTexture->SetGpuTexture(std::move(gpuTexture));
+        AppendRendererTrace("GxmRenderer: EnsureUploaded runtimeTexture="
+            + std::to_string(reinterpret_cast<std::uintptr_t>(runtimeTexture))
+            + " id="
+            + runtimeTexture->get_Id()
+            + " nativeTexture="
+            + std::to_string(reinterpret_cast<std::uintptr_t>(nativeTexture))
+            + " logicalWidth="
+            + std::to_string(textureWidth)
+            + " logicalHeight="
+            + std::to_string(textureHeight)
+            + " nativeWidth="
+            + std::to_string(nativeTextureWidth)
+            + " nativeHeight="
+            + std::to_string(nativeTextureHeight)
+            + " stridePixels="
+            + std::to_string(stridePixels));
     }
 
     /// Submits one queued quad through the GPU-backed textured-triangle path.

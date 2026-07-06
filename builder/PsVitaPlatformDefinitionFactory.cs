@@ -1,5 +1,6 @@
 using helengine.baseplatform.Definitions;
 using helengine.baseplatform.Profiles;
+using helengine.editor;
 
 namespace helengine.psvita.builder;
 
@@ -7,6 +8,45 @@ namespace helengine.psvita.builder;
 /// Creates the typed PS Vita platform metadata exposed to the editor.
 /// </summary>
 public static class PsVitaPlatformDefinitionFactory {
+    /// <summary>
+    /// Generic native numeric type remaps required by custom C++ platforms that cannot emit System.Numerics runtime types directly.
+    /// </summary>
+    const string NativeNumericTypeRemaps = "System.Numerics.Vector2=helengine.float2;System.Numerics.Vector3=helengine.float3;System.Numerics.Vector4=helengine.float4;System.Numerics.Quaternion=helengine.float4";
+
+    /// <summary>
+    /// Generic generated-math-convention value that instructs the shared C++ generator to emit native column-vector math helpers.
+    /// </summary>
+    const string NativeColumnVectorMathConvention = "native-column-vector";
+
+    /// <summary>
+    /// Pointer-size contract forwarded to the shared C++ generator for PS Vita-native output.
+    /// </summary>
+    const string PointerSizeInBytes = "4";
+
+    /// <summary>
+    /// Creates the serialized default Vita texture settings contract used when assets do not provide an explicit Vita override.
+    /// </summary>
+    /// <returns>Serialized default Vita texture settings.</returns>
+    static string CreateDefaultSerializedTextureCookSettings() {
+        return PsVitaTextureCookSettingsSerializer.Serialize(new TextureAssetProcessorSettings {
+            MaxResolution = 512,
+            ColorFormat = TextureAssetColorFormat.Rgba32,
+            AlphaPrecision = TextureAssetAlphaPrecision.A8
+        });
+    }
+
+    /// <summary>
+    /// Creates the serialized default Vita font-atlas texture settings contract used when fonts do not provide an explicit Vita override.
+    /// </summary>
+    /// <returns>Serialized default Vita font-atlas texture settings.</returns>
+    static string CreateDefaultSerializedFontAtlasTextureCookSettings() {
+        return PsVitaTextureCookSettingsSerializer.Serialize(new TextureAssetProcessorSettings {
+            MaxResolution = 0,
+            ColorFormat = TextureAssetColorFormat.Rgba32,
+            AlphaPrecision = TextureAssetAlphaPrecision.A8
+        });
+    }
+
     /// <summary>
     /// Creates the PS Vita platform definition consumed by the editor build graph.
     /// </summary>
@@ -166,15 +206,26 @@ public static class PsVitaPlatformDefinitionFactory {
                             true,
                             []),
                         new PlatformSettingDefinition(
-                            PlatformCodegenSettingIds.AppContextBaseDirectoryMode,
-                            "AppContext Base Directory Mode",
-                            PlatformSettingKind.Choice,
-                            PlatformCodegenSettingIds.AppContextBaseDirectoryModeStaticDot,
+                            "generated-math-convention",
+                            "Generated Math Convention",
+                            PlatformSettingKind.Text,
+                            NativeColumnVectorMathConvention,
                             true,
-                            [
-                                PlatformCodegenSettingIds.AppContextBaseDirectoryModeDynamicRuntime,
-                                PlatformCodegenSettingIds.AppContextBaseDirectoryModeStaticDot
-                            ])
+                            []),
+                        new PlatformSettingDefinition(
+                            "pointer-size-bytes",
+                            "Pointer Size (Bytes)",
+                            PlatformSettingKind.Text,
+                            PointerSizeInBytes,
+                            true,
+                            []),
+                        new PlatformSettingDefinition(
+                            "type-remaps",
+                            "Type Remaps",
+                            PlatformSettingKind.Text,
+                            NativeNumericTypeRemaps,
+                            true,
+                            [])
                     ])
             ],
             [
@@ -196,6 +247,40 @@ public static class PsVitaPlatformDefinitionFactory {
             new RuntimeGenerationContract(
                 RuntimeMaterialResolutionMode.CookedPlatformOwned,
                 true,
-                PackagedPathPolicy.ContentRelativeOnly));
+                PackagedPathPolicy.ContentRelativeOnly),
+            assetCookCapabilities: [
+                new PlatformAssetCookCapabilityDefinition(
+                    "texture",
+                    "runtime-texture",
+                    PlatformAssetCookOwnershipKind.BuilderOwned,
+                    "psvita-texture",
+                    CreateDefaultSerializedTextureCookSettings(),
+                    CreateTextureFormatCapabilities()),
+                new PlatformAssetCookCapabilityDefinition(
+                    "font-atlas-texture",
+                    "runtime-texture",
+                    PlatformAssetCookOwnershipKind.BuilderOwned,
+                    "psvita-font-atlas-texture",
+                    CreateDefaultSerializedFontAtlasTextureCookSettings(),
+                    CreateTextureFormatCapabilities(),
+                    ".hetex")
+            ]);
+    }
+
+    /// <summary>
+    /// Creates the generic texture format capability metadata supported by the Vita texture cooker.
+    /// </summary>
+    /// <returns>Texture capability metadata for Vita builder-owned texture cook contracts.</returns>
+    static PlatformTextureFormatCapabilityDefinition CreateTextureFormatCapabilities() {
+        return new PlatformTextureFormatCapabilityDefinition(
+            [
+                TextureAssetColorFormat.Rgba32.ToString()
+            ],
+            [
+                TextureAssetAlphaPrecision.A8
+            ],
+            [
+                new PlatformTextureFormatCombinationDefinition(TextureAssetColorFormat.Rgba32.ToString(), TextureAssetAlphaPrecision.A8)
+            ]);
     }
 }

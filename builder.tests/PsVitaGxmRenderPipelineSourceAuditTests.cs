@@ -87,6 +87,19 @@ public sealed class PsVitaGxmRenderPipelineSourceAuditTests {
     }
 
     /// <summary>
+    /// Verifies the PS Vita text renderer applies authored horizontal alignment using visible glyph widths instead of leaving every line left-anchored.
+    /// </summary>
+    [Fact]
+    public void Source_whenQueueingTextGlyphs_appliesAuthoredHorizontalAlignment() {
+        string renderManagerSourcePath = PsVitaRepositoryPathResolver.ResolvePath("src", "platform", "psvita", "rendering", "PsVitaRenderManager2D.cpp");
+        string renderManagerSource = File.ReadAllText(renderManagerSourcePath);
+
+        Assert.Contains("TextLayoutAlignmentUtils::MeasureVisibleLineWidth", renderManagerSource, StringComparison.Ordinal);
+        Assert.Contains("TextLayoutAlignmentUtils::ResolveHorizontalOffset", renderManagerSource, StringComparison.Ordinal);
+        Assert.Contains("text->get_Alignment()", renderManagerSource, StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// Verifies the Vita runtime can traverse camera-owned ordered 2D queues so loaded sprite and text components actually reach the queued-quad renderer.
     /// </summary>
     [Fact]
@@ -128,9 +141,12 @@ public sealed class PsVitaGxmRenderPipelineSourceAuditTests {
 
         Assert.Contains("void EnsureUploaded(PsVitaRuntimeTexture* runtimeTexture);", gxmRendererHeaderSource, StringComparison.Ordinal);
         Assert.Contains("void SubmitQuad(const PsVitaQueuedQuad& queuedQuad);", gxmRendererHeaderSource, StringComparison.Ordinal);
+        Assert.Contains("CalculatePaddedTextureDimension", gxmRendererHeaderSource, StringComparison.Ordinal);
         Assert.Contains("vita2d_init", gxmRendererSource, StringComparison.Ordinal);
         Assert.Contains("vita2d_start_drawing", gxmRendererSource, StringComparison.Ordinal);
         Assert.Contains("vita2d_draw_array_textured", gxmRendererSource, StringComparison.Ordinal);
+        Assert.Contains("vita2d_create_empty_texture_format(nativeTextureWidth, nativeTextureHeight", gxmRendererSource, StringComparison.Ordinal);
+        Assert.Contains("nativeTextureHeight", gxmRendererSource, StringComparison.Ordinal);
         Assert.Contains("vita2d_swap_buffers", gxmRendererSource, StringComparison.Ordinal);
         Assert.Contains("vita2d_texture*", gpuTextureHeaderSource, StringComparison.Ordinal);
         Assert.Contains("vita2d", cmakeSource, StringComparison.Ordinal);

@@ -35,6 +35,82 @@ $InstalledTitleId = 'HLEN00001'
 $InstalledTitlePath = "C:\Users\Helena\AppData\Roaming\Vita3K\Vita3K\ux0\app\$InstalledTitleId"
 $InstalledEbootPath = Join-Path -Path $InstalledTitlePath -ChildPath 'eboot.bin'
 
+$GetInstalledTitleFingerprint = {
+    param(
+        [string]$installedTitlePath
+    )
+
+    if (-not (Test-Path -LiteralPath $installedTitlePath -PathType Container)) {
+        return $null
+    }
+
+    $entries = @(Get-ChildItem -LiteralPath $installedTitlePath -Recurse -File -ErrorAction SilentlyContinue)
+    if ($entries.Count -eq 0) {
+        return [pscustomobject]@{
+            FileCount = 0
+            TotalLength = 0L
+            LastWriteTimeUtcTicks = 0L
+        }
+    }
+
+    $totalLength = 0L
+    $lastWriteTimeUtcTicks = 0L
+    foreach ($entry in $entries) {
+        $totalLength += $entry.Length
+        $entryLastWriteTimeUtcTicks = $entry.LastWriteTimeUtc.Ticks
+        if ($entryLastWriteTimeUtcTicks -gt $lastWriteTimeUtcTicks) {
+            $lastWriteTimeUtcTicks = $entryLastWriteTimeUtcTicks
+        }
+    }
+
+    return [pscustomobject]@{
+        FileCount = $entries.Count
+        TotalLength = $totalLength
+        LastWriteTimeUtcTicks = $lastWriteTimeUtcTicks
+    }
+}
+
+$WaitForInstalledTitleExtraction = {
+    param(
+        [System.Diagnostics.Process]$installProcess,
+        [string]$installedTitlePath,
+        [string]$installedEbootPath
+    )
+
+    $installDeadline = (Get-Date).AddSeconds(60)
+    $previousFingerprint = $null
+    $stableFingerprintSamples = 0
+
+    while ((Get-Date) -lt $installDeadline) {
+        if ($installProcess.HasExited) {
+            return Test-Path -LiteralPath $installedEbootPath -PathType Leaf
+        }
+
+        if (Test-Path -LiteralPath $installedEbootPath -PathType Leaf) {
+            $currentFingerprint = & $GetInstalledTitleFingerprint $installedTitlePath
+            if ($null -ne $currentFingerprint) {
+                if ($null -ne $previousFingerprint `
+                    -and $previousFingerprint.FileCount -eq $currentFingerprint.FileCount `
+                    -and $previousFingerprint.TotalLength -eq $currentFingerprint.TotalLength `
+                    -and $previousFingerprint.LastWriteTimeUtcTicks -eq $currentFingerprint.LastWriteTimeUtcTicks) {
+                    $stableFingerprintSamples++
+                } else {
+                    $stableFingerprintSamples = 0
+                }
+
+                $previousFingerprint = $currentFingerprint
+                if ($stableFingerprintSamples -ge 4) {
+                    return $true
+                }
+            }
+        }
+
+        Start-Sleep -Milliseconds 500
+    }
+
+    return Test-Path -LiteralPath $installedEbootPath -PathType Leaf
+}
+
 $RunningVita3KProcesses = @(Get-Process -Name 'Vita3K' -ErrorAction SilentlyContinue)
 if ($RunningVita3KProcesses.Count -gt 0) {
     $RunningVita3KProcesses | Stop-Process -Force
@@ -60,19 +136,7 @@ if (-not $KeepInstalledTitle) {
 $ShouldInstallFromVpk = $DeletedInstalledTitle -or -not (Test-Path -LiteralPath $InstalledEbootPath -PathType Leaf)
 if ($ShouldInstallFromVpk) {
     $InstallProcess = Start-Process -FilePath $Vita3KPath -ArgumentList @($ResolvedVpkPath) -PassThru -WindowStyle Normal
-    $InstallDeadline = (Get-Date).AddSeconds(20)
-    while ((Get-Date) -lt $InstallDeadline) {
-        if (Test-Path -LiteralPath $InstalledEbootPath -PathType Leaf) {
-            $InstalledFromVpk = $true
-            break
-        }
-
-        if ($InstallProcess.HasExited) {
-            break
-        }
-
-        Start-Sleep -Milliseconds 500
-    }
+    $InstalledFromVpk = & $WaitForInstalledTitleExtraction $InstallProcess $InstalledTitlePath $InstalledEbootPath
 
     if (-not (Test-Path -LiteralPath $InstalledEbootPath -PathType Leaf)) {
         if (-not $InstallProcess.HasExited) {

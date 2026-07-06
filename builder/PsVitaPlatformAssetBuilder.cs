@@ -7,13 +7,14 @@ using helengine.baseplatform.Profiles;
 using helengine.baseplatform.Reporting;
 using helengine.baseplatform.Requests;
 using helengine.baseplatform.Results;
+using helengine.editor;
 
 namespace helengine.psvita.builder;
 
 /// <summary>
 /// Implements the PS Vita platform asset builder contract consumed by the editor.
 /// </summary>
-public sealed class PsVitaPlatformAssetBuilder : IPlatformAssetBuilder, IShaderBackendRegistryContributor {
+public sealed class PsVitaPlatformAssetBuilder : IPlatformAssetBuilder {
     /// <summary>
     /// Stable material field identifier used for the authored base color.
     /// </summary>
@@ -55,20 +56,20 @@ public sealed class PsVitaPlatformAssetBuilder : IPlatformAssetBuilder, IShaderB
     readonly IPsVitaNativeBuildExecutor NativeBuildExecutor;
 
     /// <summary>
+    /// Source processor used to execute builder-owned Vita texture cook work items.
+    /// </summary>
+    readonly IPsVitaPlatformCookSourceProcessor PlatformCookSourceProcessor;
+
+    /// <summary>
     /// Writer that backfills generated runtime component deserializer support when the editor build graph does not emit it for the Vita workspace.
     /// </summary>
     readonly PsVitaGeneratedRuntimeComponentSupportWriter GeneratedRuntimeComponentSupportWriter;
 
     /// <summary>
-    /// Shared shader backend contributor owned by the dynamically loaded PS Vita builder assembly.
-    /// </summary>
-    readonly PsVitaShaderBackendRegistration ShaderBackendRegistration;
-
-    /// <summary>
     /// Initializes the PS Vita builder with the default Docker-backed native build executor.
     /// </summary>
     public PsVitaPlatformAssetBuilder()
-        : this(new PsVitaNativeBuildExecutor(), new PsVitaGeneratedRuntimeComponentSupportWriter()) {
+        : this(new PsVitaNativeBuildExecutor(), new PsVitaPlatformCookSourceProcessor(), new PsVitaGeneratedRuntimeComponentSupportWriter()) {
     }
 
     /// <summary>
@@ -77,8 +78,8 @@ public sealed class PsVitaPlatformAssetBuilder : IPlatformAssetBuilder, IShaderB
     /// <param name="nativeBuildExecutor">Native build executor used by this builder instance.</param>
     public PsVitaPlatformAssetBuilder(IPsVitaNativeBuildExecutor nativeBuildExecutor) {
         NativeBuildExecutor = nativeBuildExecutor ?? throw new ArgumentNullException(nameof(nativeBuildExecutor));
+        PlatformCookSourceProcessor = new PsVitaPlatformCookSourceProcessor();
         GeneratedRuntimeComponentSupportWriter = new PsVitaGeneratedRuntimeComponentSupportWriter();
-        ShaderBackendRegistration = new PsVitaShaderBackendRegistration();
         Descriptor = new PlatformBuilderDescriptor(
             "helengine.psvita.builder",
             "1.0.0",
@@ -94,13 +95,15 @@ public sealed class PsVitaPlatformAssetBuilder : IPlatformAssetBuilder, IShaderB
     /// Initializes the PS Vita builder with explicit native build and generated-runtime fallback services.
     /// </summary>
     /// <param name="nativeBuildExecutor">Native build executor used by this builder instance.</param>
+    /// <param name="platformCookSourceProcessor">Builder-owned source processor used by this builder instance.</param>
     /// <param name="generatedRuntimeComponentSupportWriter">Generated runtime component fallback writer used by this builder instance.</param>
     internal PsVitaPlatformAssetBuilder(
         IPsVitaNativeBuildExecutor nativeBuildExecutor,
+        IPsVitaPlatformCookSourceProcessor platformCookSourceProcessor,
         PsVitaGeneratedRuntimeComponentSupportWriter generatedRuntimeComponentSupportWriter) {
         NativeBuildExecutor = nativeBuildExecutor ?? throw new ArgumentNullException(nameof(nativeBuildExecutor));
+        PlatformCookSourceProcessor = platformCookSourceProcessor ?? throw new ArgumentNullException(nameof(platformCookSourceProcessor));
         GeneratedRuntimeComponentSupportWriter = generatedRuntimeComponentSupportWriter ?? throw new ArgumentNullException(nameof(generatedRuntimeComponentSupportWriter));
-        ShaderBackendRegistration = new PsVitaShaderBackendRegistration();
         Descriptor = new PlatformBuilderDescriptor(
             "helengine.psvita.builder",
             "1.0.0",
@@ -121,18 +124,6 @@ public sealed class PsVitaPlatformAssetBuilder : IPlatformAssetBuilder, IShaderB
     /// Gets the typed PS Vita platform definition exposed to the editor.
     /// </summary>
     public PlatformDefinition Definition { get; }
-
-    /// <summary>
-    /// Registers the PS Vita shader backend exposed by this dynamically loaded builder assembly.
-    /// </summary>
-    /// <param name="shaderBackendRegistry">Shared registry that should receive the PS Vita shader backend.</param>
-    public void RegisterShaderBackends(ShaderBackendRegistry shaderBackendRegistry) {
-        if (shaderBackendRegistry == null) {
-            throw new ArgumentNullException(nameof(shaderBackendRegistry));
-        }
-
-        ShaderBackendRegistration.Register(shaderBackendRegistry);
-    }
 
     /// <summary>
     /// Returns the builder-owned cooked material payload for one PS Vita material schema request.
@@ -226,6 +217,7 @@ public sealed class PsVitaPlatformAssetBuilder : IPlatformAssetBuilder, IShaderB
 
         StageScenes(request, stagedContentRootPath, diagnostics, diagnosticReporter, progressReporter, sceneOutcomes, ref completedItems, totalItems, cancellationToken);
         StageLooseAssets(request, stagedContentRootPath, diagnostics, diagnosticReporter, progressReporter, looseAssetOutcomes, ref completedItems, totalItems, cancellationToken);
+        ExecutePlatformCookWorkItems(request, request.OutputRoot, stagedContentRootPath, diagnostics, diagnosticReporter, progressReporter, cancellationToken);
 
         bool nativeBuildSucceeded = false;
         if (diagnostics.Count == 0) {
@@ -448,6 +440,93 @@ public sealed class PsVitaPlatformAssetBuilder : IPlatformAssetBuilder, IShaderB
     }
 
     /// <summary>
+    /// Executes builder-owned Vita cook work items directly into the staged output roots using the editor-resolved source path and serialized settings payload.
+    /// </summary>
+    /// <param name="request">Resolved build request.</param>
+    /// <param name="outputRoot">Editor output root that receives the cooked artifacts.</param>
+    /// <param name="stagedContentRootPath">Native staged-content root that receives the cooked artifacts.</param>
+    /// <param name="diagnostics">Diagnostic sink for cook failures.</param>
+    /// <param name="diagnosticReporter">Streaming diagnostic reporter.</param>
+    /// <param name="progressReporter">Streaming progress reporter.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    void ExecutePlatformCookWorkItems(
+        PlatformBuildRequest request,
+        string outputRoot,
+        string stagedContentRootPath,
+        List<PlatformBuildDiagnostic> diagnostics,
+        IPlatformBuildDiagnosticReporter diagnosticReporter,
+        IPlatformBuildProgressReporter progressReporter,
+        CancellationToken cancellationToken) {
+        if (request == null) {
+            throw new ArgumentNullException(nameof(request));
+        } else if (string.IsNullOrWhiteSpace(outputRoot)) {
+            throw new ArgumentException("Output root must be provided.", nameof(outputRoot));
+        } else if (string.IsNullOrWhiteSpace(stagedContentRootPath)) {
+            throw new ArgumentException("Staged content root path must be provided.", nameof(stagedContentRootPath));
+        } else if (diagnostics == null) {
+            throw new ArgumentNullException(nameof(diagnostics));
+        } else if (diagnosticReporter == null) {
+            throw new ArgumentNullException(nameof(diagnosticReporter));
+        } else if (progressReporter == null) {
+            throw new ArgumentNullException(nameof(progressReporter));
+        }
+
+        PlatformCookWorkItem[] platformCookWorkItems = request.Manifest.PlatformCookWorkItems ?? [];
+        for (int workItemIndex = 0; workItemIndex < platformCookWorkItems.Length; workItemIndex++) {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            PlatformCookWorkItem workItem = platformCookWorkItems[workItemIndex];
+            try {
+                byte[] cookedPayloadBytes = ExecutePlatformCookWorkItem(workItem);
+                string outputRelativePath = ResolveCookedRelativePath(workItem.OutputRelativePath);
+                WriteFile(cookedPayloadBytes, Path.Combine(outputRoot, outputRelativePath));
+                WriteFile(cookedPayloadBytes, Path.Combine(stagedContentRootPath, ResolveStagedContentRelativePath(outputRelativePath)));
+                progressReporter.Report(new PlatformBuildProgressUpdate(
+                    "Execute Platform Cook Work Items",
+                    workItem.OutputLogicalArtifactId,
+                    workItemIndex + 1,
+                    platformCookWorkItems.Length,
+                    $"Cooked platform-owned artifact '{workItem.OutputRelativePath}'."));
+            } catch (Exception ex) {
+                AddDiagnostic(
+                    diagnostics,
+                    diagnosticReporter,
+                    PlatformBuildDiagnosticSeverity.Error,
+                    "VITABUILD004",
+                    $"Platform cook work item '{workItem.WorkItemId}' failed: {ex.Message}",
+                    string.Empty,
+                    workItem.OutputLogicalArtifactId,
+                    workItem.OutputRelativePath);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Executes one builder-owned Vita cook work item and returns the cooked runtime payload bytes.
+    /// </summary>
+    /// <param name="workItem">Builder-owned Vita cook work item to execute.</param>
+    /// <returns>Cooked runtime payload bytes.</returns>
+    byte[] ExecutePlatformCookWorkItem(PlatformCookWorkItem workItem) {
+        if (workItem == null) {
+            throw new ArgumentNullException(nameof(workItem));
+        } else if (!string.Equals(workItem.TargetPlatformId, Definition.PlatformId, StringComparison.OrdinalIgnoreCase)) {
+            throw new InvalidOperationException($"Unsupported Vita work item target platform '{workItem.TargetPlatformId}'.");
+        }
+
+        TextureAssetProcessorSettings settings = PsVitaTextureCookSettingsSerializer.Deserialize(workItem.SerializedPlatformSettings);
+        string assetId = ResolveCookWorkItemAssetId(workItem);
+        if (string.Equals(workItem.SourceAssetKind, "texture", StringComparison.OrdinalIgnoreCase)) {
+            TextureAsset cookedTextureAsset = PlatformCookSourceProcessor.CookTexture(workItem.SourceAssetPath, assetId, settings);
+            return global::helengine.files.AssetSerializer.SerializeToBytes(cookedTextureAsset);
+        } else if (string.Equals(workItem.SourceAssetKind, "font-atlas-texture", StringComparison.OrdinalIgnoreCase)) {
+            TextureAsset cookedAtlasTextureAsset = PlatformCookSourceProcessor.CookFontAtlasTexture(workItem.SourceAssetPath, assetId, settings);
+            return global::helengine.files.AssetSerializer.SerializeToBytes(cookedAtlasTextureAsset);
+        }
+
+        throw new InvalidOperationException($"Unsupported Vita platform cook work item source kind '{workItem.SourceAssetKind}'.");
+    }
+
+    /// <summary>
     /// Resolves the payload bytes that should be staged for one source asset.
     /// </summary>
     /// <param name="sourcePath">Source file path to inspect.</param>
@@ -552,6 +631,31 @@ public sealed class PsVitaPlatformAssetBuilder : IPlatformAssetBuilder, IShaderB
         }
 
         return Path.Combine("cooked", normalizedSourceIdentity.Replace('/', Path.DirectorySeparatorChar));
+    }
+
+    /// <summary>
+    /// Resolves the stable asset identifier a Vita platform cook work item should preserve in the cooked payload.
+    /// </summary>
+    /// <param name="workItem">Cook work item whose metadata should be inspected.</param>
+    /// <returns>Stable asset identifier for the cooked payload.</returns>
+    static string ResolveCookWorkItemAssetId(PlatformCookWorkItem workItem) {
+        if (workItem == null) {
+            throw new ArgumentNullException(nameof(workItem));
+        }
+
+        PlatformCookWorkItemMetadata[] metadata = workItem.Metadata ?? [];
+        for (int index = 0; index < metadata.Length; index++) {
+            PlatformCookWorkItemMetadata entry = metadata[index];
+            if (entry == null) {
+                continue;
+            }
+
+            if (string.Equals(entry.Key, "source-asset-id", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(entry.Value)) {
+                return entry.Value;
+            }
+        }
+
+        return workItem.OutputRelativePath;
     }
 
     /// <summary>
