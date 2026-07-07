@@ -14,6 +14,7 @@
 #include "CameraClearSettings.hpp"
 #include "ContentManager.hpp"
 #include "CoreInitializationOptions.hpp"
+#include "HostFileSystemContentStreamSource.hpp"
 #include "InputControlId.hpp"
 #include "InputControlKind.hpp"
 #include "InputDeviceKind.hpp"
@@ -211,7 +212,7 @@ namespace helengine::psvita {
         AppendBootTrace("InitializeCore: begin");
         EngineCore = new Core();
         EngineOptions = EngineCore->get_InitializationOptions();
-        EngineOptions->set_ContentRootPath(RuntimeContentRootPath);
+        EngineOptions->set_ContentStreamSource(new HostFileSystemContentStreamSource(RuntimeContentRootPath));
         EngineOptions->set_UpdateOrderLayers(4);
         EngineOptions->set_RenderOrderLayers3D(4);
         EngineOptions->set_UpdateListInitialCapacity(64);
