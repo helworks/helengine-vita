@@ -22,7 +22,7 @@ namespace helengine::psvita {
     class PsVitaRenderManager2D final : public ::RenderManager2D, public ::IRenderVisitor2D {
     public:
         /// Builds a runtime texture from one packaged cooked texture asset.
-        ::RuntimeTexture* BuildTextureFromCooked(std::string cookedAssetPath);
+        ::RuntimeTexture* BuildTextureFromCooked(std::string cookedAssetPath, IContentStreamSource* contentStreamSource) override;
 
         /// Builds a runtime texture from raw data.
         ::RuntimeTexture* BuildTextureFromRaw(::TextureAsset* data) override;

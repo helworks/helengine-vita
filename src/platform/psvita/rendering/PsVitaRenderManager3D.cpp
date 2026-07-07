@@ -186,7 +186,8 @@ namespace helengine::psvita {
     }
 
     /// Builds one concrete runtime material from one packaged cooked platform material asset.
-    ::RuntimeMaterial* PsVitaRenderManager3D::BuildMaterialFromCooked(std::string cookedAssetPath) {
+    ::RuntimeMaterial* PsVitaRenderManager3D::BuildMaterialFromCooked(std::string cookedAssetPath, IContentStreamSource* contentStreamSource) {
+        (void)contentStreamSource;
         if (cookedAssetPath.empty()) {
             throw new ArgumentException("Cooked material asset path must be provided.", "cookedAssetPath");
         }
@@ -293,7 +294,8 @@ namespace helengine::psvita {
     }
 
     /// Builds one concrete PS Vita runtime model from one packaged cooked model asset.
-    ::RuntimeModel* PsVitaRenderManager3D::BuildModelFromCooked(std::string cookedAssetPath) {
+    ::RuntimeModel* PsVitaRenderManager3D::BuildModelFromCooked(std::string cookedAssetPath, IContentStreamSource* contentStreamSource) {
+        (void)contentStreamSource;
         if (cookedAssetPath.empty()) {
             throw new ArgumentException("Cooked model asset path must be provided.", "cookedAssetPath");
         }

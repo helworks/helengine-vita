@@ -54,7 +54,8 @@ namespace helengine::psvita {
     }
 
     /// Builds a runtime texture from one packaged cooked texture asset.
-    ::RuntimeTexture* PsVitaRenderManager2D::BuildTextureFromCooked(std::string cookedAssetPath) {
+    ::RuntimeTexture* PsVitaRenderManager2D::BuildTextureFromCooked(std::string cookedAssetPath, IContentStreamSource* contentStreamSource) {
+        (void)contentStreamSource;
         AppendRenderTrace("RenderManager2D::BuildTextureFromCooked begin");
         if (cookedAssetPath.empty()) {
             throw new ArgumentException("Cooked texture asset path must be provided.", "cookedAssetPath");

@@ -49,7 +49,7 @@ namespace helengine::psvita {
         void Draw() override;
 
         /// Builds one concrete runtime material from one packaged cooked platform material asset.
-        ::RuntimeMaterial* BuildMaterialFromCooked(std::string cookedAssetPath);
+        ::RuntimeMaterial* BuildMaterialFromCooked(std::string cookedAssetPath, IContentStreamSource* contentStreamSource) override;
 
         /// Builds one concrete runtime material from one deserialized material asset payload.
         ::RuntimeMaterial* BuildMaterialFromCooked(::MaterialAsset* materialAsset);
@@ -58,7 +58,7 @@ namespace helengine::psvita {
         ::RuntimeMaterial* BuildMaterialFromCooked(::ShaderMaterialAsset* materialAsset);
 
         /// Builds one concrete PS Vita runtime model from one packaged cooked model asset.
-        ::RuntimeModel* BuildModelFromCooked(std::string cookedAssetPath);
+        ::RuntimeModel* BuildModelFromCooked(std::string cookedAssetPath, IContentStreamSource* contentStreamSource) override;
 
         /// Builds one concrete PS Vita runtime model from raw data.
         ::RuntimeModel* BuildModelFromRaw(::ModelAsset* data) override;
