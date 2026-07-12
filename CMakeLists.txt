@@ -54,6 +54,7 @@ if(DEFINED HELENGINE_CORE_CPP_ROOT AND NOT HELENGINE_CORE_CPP_ROOT STREQUAL "")
     endif()
 
     list(APPEND HELENGINE_PSVITA_SOURCES
+        src/platform/psvita/audio/PsVitaAudioBackend.cpp
         src/platform/psvita/PsVitaInputBackend.cpp
         src/platform/psvita/PsVitaRuntimeDiagnosticsProvider.cpp
         src/platform/psvita/PsVitaRuntimeSceneCatalogFactory.cpp
@@ -103,6 +104,7 @@ endif()
 target_link_libraries(${PROJECT_NAME} PRIVATE
     pthread
     vita2d
+    SceAudio_stub
     SceAppMgr_stub
     SceCommonDialog_stub
     SceCtrl_stub

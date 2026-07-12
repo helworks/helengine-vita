@@ -13,7 +13,6 @@
 #include "AmbientLightComponent.hpp"
 #include "Core.hpp"
 #include "DirectionalLightComponent.hpp"
-#include "EditorAssetBinarySerializer.hpp"
 #include "EngineBinaryHeader.hpp"
 #include "EngineBinaryHeaderSerializer.hpp"
 #include "Entity.hpp"
@@ -217,7 +216,7 @@ namespace helengine::psvita {
                 return runtimeMaterial;
             }
 
-            asset = ::EditorAssetBinarySerializer::Deserialize(stream, header);
+            asset = ::AssetSerializer::Deserialize(stream);
             header = nullptr;
             delete stream;
             stream = nullptr;

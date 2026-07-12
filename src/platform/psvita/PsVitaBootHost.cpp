@@ -29,6 +29,7 @@
 #include "StandardPlatformActionBinding.hpp"
 #include "StandardPlatformInputConfiguration.hpp"
 #include "runtime/native_exceptions.hpp"
+#include "platform/psvita/audio/PsVitaAudioBackend.hpp"
 #include "platform/psvita/PsVitaInputBackend.hpp"
 #include "platform/psvita/PsVitaRuntimeDiagnosticsProvider.hpp"
 #include "platform/psvita/PsVitaRuntimeSceneCatalogFactory.hpp"
@@ -105,6 +106,7 @@ namespace helengine::psvita {
         , EngineRenderManager3D(nullptr)
         , EngineRenderManager2D(nullptr)
         , EngineInputBackend(nullptr)
+        , EngineAudioBackend(nullptr)
         , EngineRuntimeDiagnosticsProvider(nullptr)
         , GxmRenderer(nullptr)
 #endif
@@ -231,8 +233,10 @@ namespace helengine::psvita {
         static_cast<PsVitaRenderManager3D*>(EngineRenderManager3D)->SetGxmRenderer(GxmRenderer);
         static_cast<PsVitaRenderManager2D*>(EngineRenderManager2D)->SetGxmRenderer(GxmRenderer);
         EngineInputBackend = new PsVitaInputBackend();
+        EngineAudioBackend = new PsVitaAudioBackend();
         EngineRenderManager3D->AddWindow(0, ScreenWidth, ScreenHeight);
         EngineCore->Initialize(EngineRenderManager3D, EngineRenderManager2D, EngineInputBackend, EnginePlatformInfo, EngineOptions);
+        EngineCore->SetAudioBackend(EngineAudioBackend);
         AppendBootTrace("InitializeCore: success");
     }
 

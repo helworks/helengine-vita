@@ -89,12 +89,11 @@ public sealed class PsVitaRenderManager3DSourceAuditTests {
         Assert.Contains("::RuntimeMaterial* BuildMaterialFromCooked(std::string cookedAssetPath);", headerSource, StringComparison.Ordinal);
         Assert.Contains("::RuntimeMaterial* BuildMaterialFromCooked(::MaterialAsset* materialAsset);", headerSource, StringComparison.Ordinal);
         Assert.Contains("#include \"EngineBinaryHeaderSerializer.hpp\"", sourceCode, StringComparison.Ordinal);
-        Assert.Contains("#include \"EditorAssetBinarySerializer.hpp\"", sourceCode, StringComparison.Ordinal);
         Assert.Contains("#include \"MaterialAsset.hpp\"", sourceCode, StringComparison.Ordinal);
         Assert.Contains("#include \"RuntimeMaterial.hpp\"", sourceCode, StringComparison.Ordinal);
         Assert.Contains("::EngineBinaryHeader* header = nullptr;", sourceCode, StringComparison.Ordinal);
         Assert.Contains("header = ::EngineBinaryHeaderSerializer::Read(stream);", sourceCode, StringComparison.Ordinal);
-        Assert.Contains("asset = ::EditorAssetBinarySerializer::Deserialize(stream, header);", sourceCode, StringComparison.Ordinal);
+        Assert.Contains("asset = ::AssetSerializer::Deserialize(stream);", sourceCode, StringComparison.Ordinal);
         Assert.Contains("::MaterialAsset* cookedMaterialAsset = he_cpp_try_cast<MaterialAsset>(asset);", sourceCode, StringComparison.Ordinal);
         Assert.Contains("auto* runtimeMaterial = new ::RuntimeMaterial();", sourceCode, StringComparison.Ordinal);
         Assert.Contains("runtimeMaterial->set_Id(materialAsset->get_Id());", sourceCode, StringComparison.Ordinal);

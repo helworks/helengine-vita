@@ -6,6 +6,7 @@
 class Core;
 class ICamera;
 class CoreInitializationOptions;
+class IAudioBackend;
 class PlatformInfo;
 class RenderManager3D;
 class RenderManager2D;
@@ -85,6 +86,9 @@ namespace helengine::psvita {
 
         /// Stores the temporary input backend passed into generated-core startup.
         ::IInputBackend* EngineInputBackend;
+
+        /// Stores the temporary audio backend passed into generated-core startup.
+        ::IAudioBackend* EngineAudioBackend;
 
         /// Stores the runtime diagnostics provider that records generated-core scene transition and entity disposal stages into the boot trace.
         PsVitaRuntimeDiagnosticsProvider* EngineRuntimeDiagnosticsProvider;
