@@ -119,6 +119,9 @@ namespace helengine::psvita {
         /// Resolves the solid-color mesh base color that should be used for one runtime submesh draw.
         static std::uint32_t ResolveSolidColorSubmeshColor(::MeshComponent* meshComponent, int32_t submeshIndex);
 
+        /// Resolves one cooked material's standard base-color constant buffer into packed Vita color.
+        static std::uint32_t ResolveCookedMaterialBaseColorAbgr(::ShaderMaterialAsset* materialAsset);
+
         /// Copies one runtime submesh array from the raw model asset into PS Vita-owned submesh objects.
         Array<rendering::PsVitaRuntimeSubmesh*>* BuildRuntimeSubmeshes(::ModelAsset* data, const std::vector<std::uint32_t>& resolvedIndices);
 

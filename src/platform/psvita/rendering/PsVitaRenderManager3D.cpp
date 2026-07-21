@@ -32,6 +32,7 @@
 #include "platform/psvita/rendering/PsVitaGxmRenderer.hpp"
 #include "platform/psvita/rendering/PsVitaCompiledShaderMaterialReader.hpp"
 #include "platform/psvita/rendering/PsVitaCompiledShaderRuntimeMaterial.hpp"
+#include "platform/psvita/rendering/PsVitaMaterialColorDecoder.hpp"
 #include "platform/psvita/rendering/PsVitaPackedModelReader.hpp"
 #include "platform/psvita/rendering/PsVitaRenderManager2D.hpp"
 #include "platform/psvita/rendering/PsVitaRuntimeModel.hpp"
@@ -40,6 +41,8 @@
 #include "runtime/native_exceptions.hpp"
 #include "runtime/native_string.hpp"
 #include "system/io/file.hpp"
+
+#include "MaterialConstantBufferAsset.hpp"
 
 namespace {
     constexpr int PsVitaScreenWidth = 960;
@@ -276,7 +279,7 @@ namespace helengine::psvita {
         runtimeMaterial->SetVertexProgramName(materialAsset->VertexProgram);
         runtimeMaterial->SetPixelProgramName(materialAsset->PixelProgram);
         runtimeMaterial->SetVariantName(materialAsset->Variant);
-        runtimeMaterial->SetBaseColorAbgr(0xFFFFFFFFu);
+        runtimeMaterial->SetBaseColorAbgr(ResolveCookedMaterialBaseColorAbgr(materialAsset));
         return runtimeMaterial;
     }
 
@@ -851,6 +854,36 @@ namespace helengine::psvita {
         return compiledShaderMaterial == nullptr
             ? 0xFFFFFFFFu
             : compiledShaderMaterial->GetBaseColorAbgr();
+    }
+
+    /// Resolves one cooked standard-material base-color constant buffer into packed Vita color.
+    std::uint32_t PsVitaRenderManager3D::ResolveCookedMaterialBaseColorAbgr(::ShaderMaterialAsset* materialAsset) {
+        if (materialAsset == nullptr) {
+            throw new ArgumentNullException("materialAsset");
+        }
+        if (materialAsset->ConstantBuffers == nullptr) {
+            return 0xFFFFFFFFu;
+        }
+
+        for (int32_t bufferIndex = 0; bufferIndex < materialAsset->ConstantBuffers->Length; ++bufferIndex) {
+            ::MaterialConstantBufferAsset* constantBuffer = (*materialAsset->ConstantBuffers)[bufferIndex];
+            if (constantBuffer == nullptr || constantBuffer->Name != "BaseColorBuffer") {
+                continue;
+            }
+            if (constantBuffer->Data == nullptr) {
+                throw new InvalidOperationException("PS Vita BaseColorBuffer payload cannot be null.");
+            }
+
+            std::vector<std::uint8_t> bytes;
+            bytes.reserve(static_cast<std::size_t>(constantBuffer->Data->Length));
+            for (int32_t byteIndex = 0; byteIndex < constantBuffer->Data->Length; ++byteIndex) {
+                bytes.push_back((*constantBuffer->Data)[byteIndex]);
+            }
+
+            return rendering::PsVitaMaterialColorDecoder::DecodeBaseColorAbgr(bytes);
+        }
+
+        return 0xFFFFFFFFu;
     }
 
     /// Copies one runtime submesh array from the raw model asset into PS Vita-owned submesh objects.

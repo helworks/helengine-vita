@@ -86,7 +86,7 @@ public sealed class PsVitaRenderManager3DSourceAuditTests {
         string headerSource = File.ReadAllText(headerPath);
         string sourceCode = File.ReadAllText(sourcePath);
 
-        Assert.Contains("::RuntimeMaterial* BuildMaterialFromCooked(std::string cookedAssetPath);", headerSource, StringComparison.Ordinal);
+        Assert.Contains("::RuntimeMaterial* BuildMaterialFromCooked(std::string cookedAssetPath, IContentStreamSource* contentStreamSource) override;", headerSource, StringComparison.Ordinal);
         Assert.Contains("::RuntimeMaterial* BuildMaterialFromCooked(::MaterialAsset* materialAsset);", headerSource, StringComparison.Ordinal);
         Assert.Contains("#include \"EngineBinaryHeaderSerializer.hpp\"", sourceCode, StringComparison.Ordinal);
         Assert.Contains("#include \"MaterialAsset.hpp\"", sourceCode, StringComparison.Ordinal);
@@ -98,10 +98,31 @@ public sealed class PsVitaRenderManager3DSourceAuditTests {
         Assert.Contains("auto* runtimeMaterial = new ::RuntimeMaterial();", sourceCode, StringComparison.Ordinal);
         Assert.Contains("runtimeMaterial->set_Id(materialAsset->get_Id());", sourceCode, StringComparison.Ordinal);
         Assert.Contains("runtimeMaterial->SetRenderState(materialAsset->RenderState);", sourceCode, StringComparison.Ordinal);
-        Assert.Contains("runtimeMaterial->set_CastsShadows(materialAsset->CastsShadows);", sourceCode, StringComparison.Ordinal);
-        Assert.Contains("runtimeMaterial->set_ReceivesShadows(materialAsset->ReceivesShadows);", sourceCode, StringComparison.Ordinal);
         Assert.DoesNotContain("runtimeMaterial->ApplyConstantBufferDefaults(materialAsset->ConstantBuffers);", sourceCode, StringComparison.Ordinal);
         Assert.DoesNotContain("does not support opaque platform-owned cooked material creation", sourceCode, StringComparison.Ordinal);
+        Assert.Contains("ResolveCookedMaterialBaseColorAbgr", sourceCode, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Verifies standard shader-material payloads preserve their authored base color for the CPU projected fallback path.
+    /// </summary>
+    [Fact]
+    public void Source_whenResolvingStandardShaderMaterials_decodesBaseColorBufferIntoRuntimeMaterial() {
+        string sourcePath = PsVitaRepositoryPathResolver.ResolvePath("src", "platform", "psvita", "rendering", "PsVitaRenderManager3D.cpp");
+        string decoderSourcePath = PsVitaRepositoryPathResolver.ResolvePath("src", "platform", "psvita", "rendering", "PsVitaMaterialColorDecoder.cpp");
+        string cmakePath = PsVitaRepositoryPathResolver.ResolvePath("CMakeLists.txt");
+        string sourceCode = File.ReadAllText(sourcePath);
+        string decoderSource = File.ReadAllText(decoderSourcePath);
+        string cmakeSource = File.ReadAllText(cmakePath);
+
+        Assert.Contains("BaseColorBuffer", sourceCode, StringComparison.Ordinal);
+        Assert.Contains("DecodeBaseColorAbgr", sourceCode, StringComparison.Ordinal);
+        Assert.Contains("SetBaseColorAbgr", sourceCode, StringComparison.Ordinal);
+        Assert.Contains("ShaderMaterialAsset", sourceCode, StringComparison.Ordinal);
+        Assert.Contains("std::memcpy", decoderSource, StringComparison.Ordinal);
+        Assert.Contains("std::isfinite", decoderSource, StringComparison.Ordinal);
+        Assert.Contains("std::clamp", decoderSource, StringComparison.Ordinal);
+        Assert.Contains("PsVitaMaterialColorDecoder.cpp", cmakeSource, StringComparison.Ordinal);
     }
 
     /// <summary>

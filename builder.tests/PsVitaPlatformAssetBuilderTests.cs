@@ -376,6 +376,10 @@ public sealed class PsVitaPlatformAssetBuilderTests {
         MaterialConstantBufferAsset baseColorBuffer = Assert.Single(materialAsset.ConstantBuffers);
         Assert.Equal("BaseColorBuffer", baseColorBuffer.Name);
         Assert.Equal(16, baseColorBuffer.Data.Length);
+        Assert.Equal(0x33 / 255f, BitConverter.ToSingle(baseColorBuffer.Data, 0));
+        Assert.Equal(0x66 / 255f, BitConverter.ToSingle(baseColorBuffer.Data, 4));
+        Assert.Equal(0x99 / 255f, BitConverter.ToSingle(baseColorBuffer.Data, 8));
+        Assert.Equal(1f, BitConverter.ToSingle(baseColorBuffer.Data, 12));
         Assert.Empty(result.ReferencedShaderAssetIds);
     }
 
