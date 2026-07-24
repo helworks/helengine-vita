@@ -2,23 +2,25 @@
 
 ## Goal
 
-Add a first PS Vita shadow tier while preserving Standard Shader as the shared material shader source. Materials remain platform-independent and continue to express only `CastsShadows` and `ReceivesShadows`; the PS Vita backend owns target-specific shader artifacts and render passes.
+Add the first shadow tier through the shared Standard Shader while preserving platform-independent materials. Standard Shader owns its forward, shadow-receiving forward, and depth-only variants. Shader-capable platforms compile those declared variants for their own backends; the PS Vita backend owns only its target artifacts and render passes. Materials continue to express only `CastsShadows` and `ReceivesShadows`.
 
 ## Scope
 
-The first tier supports one shadow-enabled directional light, one shadow map, and opaque Standard-material meshes. It uses a 256 by 256 depth map with a hard depth comparison and configurable depth bias. The feature must run through the real Vita shader compiler and use artifact-backed GXM programs at runtime.
+The first tier supports one shadow-enabled directional light, one shadow map, and opaque Standard-material meshes. It uses a 256 by 256 depth map with a hard depth comparison and configurable depth bias on PS Vita. The feature must run through the real Vita shader compiler and use artifact-backed GXM programs at runtime.
+
+For now, every shader-capable target in scope (Windows, PS Vita, and Wii U) compiles all Standard Shader variants. Platforms without shader support do not compile shader artifacts. There is deliberately no per-platform shadow-capability matrix in this tier.
 
 The tier deliberately excludes point-light shadows, spot-light shadows, cascades, soft PCF filtering, transparent shadow casters, and CPU lighting fallbacks.
 
 ## Architecture
 
-Standard Shader remains the single authoring source. The PS Vita target compiler emits three named artifacts from that source contract:
+Standard Shader remains the single authoring source and declares three named variants:
 
 - `ForwardStandard`: the existing unshadowed forward path.
 - `ForwardStandardShadowed`: the forward path with light-space position output and shadow-map attenuation.
 - `ShadowDepth`: a depth-only caster path.
 
-The native Vita renderer owns a shadow-frame resource containing the depth target, selected directional light data, light view-projection matrix, and depth-bias values. It selects at most one enabled directional light that requests shadows. It then performs the following sequence per camera frame:
+The shared shader compilation pipeline exposes each declared variant to Windows, PS Vita, and Wii U. Each target compiler produces artifacts in its own native format from the same semantic contract. The native Vita renderer owns a shadow-frame resource containing the depth target, selected directional light data, light view-projection matrix, and depth-bias values. It selects at most one enabled directional light that requests shadows. It then performs the following sequence per camera frame:
 
 1. Render eligible opaque meshes whose materials cast shadows into the shadow depth target.
 2. Restore the main render target.
@@ -32,7 +34,7 @@ The shadowed Standard vertex artifact consumes the current mesh streams plus the
 
 The depth artifact needs position and the light view-projection matrix only. It must not depend on the diffuse texture or the main camera matrix.
 
-All shadow program names, required uniforms, and required texture bindings are validated when the Vita artifact bundle is read. A missing artifact or binding is a build/runtime error, never a fallback to CPU shading.
+All shadow program names, required uniforms, and required texture bindings are validated by each target compiler and by the relevant runtime artifact reader. A missing artifact or binding is a build/runtime error, never a fallback to CPU shading.
 
 ## Resource and Performance Limits
 
