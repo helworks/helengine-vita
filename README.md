@@ -29,11 +29,16 @@ The build emits `build/helengine_psvita.vpk`.
 Use the shared Helengine platform build script when building the City project for PS Vita through the editor pipeline:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File C:\dev\helworks\helengine\artifacts\build-platform.ps1 `
+dotnet run --project C:\dev\helworks\helengine\tools\build-waiter\helengine.buildwaiter.csproj -- `
+    --output C:\dev\helprojs\city\vita-build `
+    --require helengine_psvita.vpk `
+    -- powershell -NoProfile -ExecutionPolicy Bypass -File C:\dev\helworks\helengine\scripts\build-platform.ps1 `
     -Project C:\dev\helprojs\city\project.heproj `
     -Platform psvita `
     -Output C:\dev\helprojs\city\vita-build
 ```
+
+The Build Waiter returns successfully only after `helengine_psvita.vpk` is fresh and non-empty.
 
 Use the standardized Vita3K launcher script to run that exact build artifact in the emulator:
 
