@@ -6,3 +6,14 @@ obj/
 *.self
 *.vpk
 tmp/
+
+# Generated platform packages, shader artifacts, diagnostics, and build logs.
+artifacts/
+diagnostics/
+verification/
+sce_sys/
+*.pvsa
+*.psvb
+*.psp2dmp.tmp
+*.stdout.log
+*.stderr.log
