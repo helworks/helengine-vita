@@ -14,7 +14,7 @@ public static class PsVitaPackedModelAssetBinarySerializer {
     /// <summary>
     /// Stable packed model payload version.
     /// </summary>
-    public const uint Version = 1u;
+    public const uint Version = 3u;
 
     /// <summary>
     /// Serializes one packed PS Vita model payload into bytes.
@@ -26,6 +26,14 @@ public static class PsVitaPackedModelAssetBinarySerializer {
             throw new ArgumentNullException(nameof(asset));
         } else if (asset.Positions == null) {
             throw new ArgumentNullException(nameof(asset.Positions));
+        } else if (asset.Normals == null) {
+            throw new ArgumentNullException(nameof(asset.Normals));
+        } else if (asset.Normals.Length != asset.Positions.Length) {
+            throw new InvalidOperationException("PS Vita packed model normals must align with positions.");
+        } else if (asset.TexCoords == null) {
+            throw new ArgumentNullException(nameof(asset.TexCoords));
+        } else if (asset.TexCoords.Length != 0 && asset.TexCoords.Length != asset.Positions.Length) {
+            throw new InvalidOperationException("PS Vita packed model texture coordinates must align with positions.");
         } else if (asset.Submeshes == null) {
             throw new ArgumentNullException(nameof(asset.Submeshes));
         } else if (asset.IndexElementSizeBytes != 2 && asset.IndexElementSizeBytes != 4) {
@@ -41,6 +49,17 @@ public static class PsVitaPackedModelAssetBinarySerializer {
         writer.Write(asset.Positions.Length);
         for (int positionIndex = 0; positionIndex < asset.Positions.Length; positionIndex++) {
             WriteFloat3(writer, asset.Positions[positionIndex]);
+        }
+
+        writer.Write(asset.Normals.Length);
+        for (int normalIndex = 0; normalIndex < asset.Normals.Length; normalIndex++) {
+            WriteFloat3(writer, asset.Normals[normalIndex]);
+        }
+
+        writer.Write(asset.TexCoords.Length);
+        for (int texCoordIndex = 0; texCoordIndex < asset.TexCoords.Length; texCoordIndex++) {
+            writer.Write(asset.TexCoords[texCoordIndex].X);
+            writer.Write(asset.TexCoords[texCoordIndex].Y);
         }
 
         WriteFloat3(writer, asset.BoundsMin);
@@ -99,6 +118,26 @@ public static class PsVitaPackedModelAssetBinarySerializer {
             positions[positionIndex] = ReadFloat3(reader);
         }
 
+        int normalCount = reader.ReadInt32();
+        if (normalCount != positionCount) {
+            throw new InvalidOperationException("PS Vita packed model normals must align with positions.");
+        }
+
+        float3[] normals = new float3[normalCount];
+        for (int normalIndex = 0; normalIndex < normalCount; normalIndex++) {
+            normals[normalIndex] = ReadFloat3(reader);
+        }
+
+        int texCoordCount = reader.ReadInt32();
+        if (texCoordCount != 0 && texCoordCount != positionCount) {
+            throw new InvalidOperationException("PS Vita packed model texture coordinates must align with positions.");
+        }
+
+        float2[] texCoords = new float2[texCoordCount];
+        for (int texCoordIndex = 0; texCoordIndex < texCoordCount; texCoordIndex++) {
+            texCoords[texCoordIndex] = new float2(reader.ReadSingle(), reader.ReadSingle());
+        }
+
         float3 boundsMin = ReadFloat3(reader);
         float3 boundsMax = ReadFloat3(reader);
 
@@ -126,6 +165,8 @@ public static class PsVitaPackedModelAssetBinarySerializer {
 
         return new PsVitaPackedModelAsset {
             Positions = positions,
+            Normals = normals,
+            TexCoords = texCoords,
             BoundsMin = boundsMin,
             BoundsMax = boundsMax,
             IndexElementSizeBytes = indexElementSizeBytes,
@@ -162,6 +203,8 @@ public static class PsVitaPackedModelAssetBinarySerializer {
             throw new ArgumentNullException(nameof(asset));
         } else if (asset.Positions == null || asset.Positions.Length == 0) {
             throw new InvalidOperationException("PS Vita packed model generation requires at least one position.");
+        } else if (asset.Normals == null || asset.Normals.Length != asset.Positions.Length) {
+            throw new InvalidOperationException("PS Vita packed model generation requires position-aligned normals.");
         }
 
         ModelAssetIndexData indexData = ModelAssetIndexData.Resolve(asset);
@@ -171,6 +214,8 @@ public static class PsVitaPackedModelAssetBinarySerializer {
 
         return SerializeToBytes(new PsVitaPackedModelAsset {
             Positions = asset.Positions,
+            Normals = asset.Normals,
+            TexCoords = asset.TexCoords ?? [],
             BoundsMin = asset.BoundsMin,
             BoundsMax = asset.BoundsMax,
             IndexElementSizeBytes = indexElementSizeBytes,

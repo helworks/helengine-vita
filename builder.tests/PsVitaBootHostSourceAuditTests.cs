@@ -107,20 +107,15 @@ public sealed class PsVitaBootHostSourceAuditTests {
     }
 
     /// <summary>
-    /// Verifies generated-core Vita builds wire the runtime diagnostics provider into core initialization so scene reload failures can be traced from the persisted boot log.
+    /// Verifies normal generated-core Vita startup does not attach the per-transition diagnostics provider because its synchronous trace writes make scene changes unusably slow on hardware.
     /// </summary>
     [Fact]
-    public void Source_whenGeneratedCoreRuntimeInitializes_wiresRuntimeSceneTransitionDiagnosticsProvider() {
-        string headerPath = PsVitaRepositoryPathResolver.ResolvePath("src", "platform", "psvita", "PsVitaBootHost.hpp");
+    public void Source_whenGeneratedCoreRuntimeInitializes_doesNotAttachPerTransitionFileDiagnostics() {
         string sourcePath = PsVitaRepositoryPathResolver.ResolvePath("src", "platform", "psvita", "PsVitaBootHost.cpp");
-        string headerSource = File.ReadAllText(headerPath);
         string sourceCode = File.ReadAllText(sourcePath);
 
-        Assert.Contains("class PsVitaRuntimeDiagnosticsProvider;", headerSource, StringComparison.Ordinal);
-        Assert.Contains("PsVitaRuntimeDiagnosticsProvider* EngineRuntimeDiagnosticsProvider;", headerSource, StringComparison.Ordinal);
-        Assert.Contains("#include \"platform/psvita/PsVitaRuntimeDiagnosticsProvider.hpp\"", sourceCode, StringComparison.Ordinal);
-        Assert.Contains("EngineRuntimeDiagnosticsProvider = new PsVitaRuntimeDiagnosticsProvider();", sourceCode, StringComparison.Ordinal);
-        Assert.Contains("EngineOptions->set_RuntimeDiagnosticsProvider(EngineRuntimeDiagnosticsProvider);", sourceCode, StringComparison.Ordinal);
+        Assert.DoesNotContain("EngineRuntimeDiagnosticsProvider = new PsVitaRuntimeDiagnosticsProvider();", sourceCode, StringComparison.Ordinal);
+        Assert.DoesNotContain("EngineOptions->set_RuntimeDiagnosticsProvider(EngineRuntimeDiagnosticsProvider);", sourceCode, StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -148,5 +143,20 @@ public sealed class PsVitaBootHostSourceAuditTests {
         string cmakeSource = File.ReadAllText(cmakePath);
 
         Assert.Contains("src/platform/psvita/PsVitaRuntimeDiagnosticsProvider.cpp", cmakeSource, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Verifies generated-core Vita startup registers the packaged Bepu physics runtime before scenes containing trigger observers are loaded.
+    /// </summary>
+    [Fact]
+    public void Source_whenGeneratedCoreRuntimeInitializes_registersPhysicsRuntime() {
+        string sourcePath = PsVitaRepositoryPathResolver.ResolvePath("src", "platform", "psvita", "PsVitaBootHost.cpp");
+        string sourceCode = File.ReadAllText(sourcePath);
+
+        Assert.Contains("#include \"GeneratedRuntimeModuleRegistration.hpp\"", sourceCode, StringComparison.Ordinal);
+        Assert.Contains("RegisterGeneratedRuntimeModules(EngineCore);", sourceCode, StringComparison.Ordinal);
+        int initializeIndex = sourceCode.IndexOf("EngineCore->Initialize(EngineRenderManager3D, EngineRenderManager2D, EngineInputBackend, EnginePlatformInfo, EngineOptions);", StringComparison.Ordinal);
+        int registrationIndex = sourceCode.IndexOf("RegisterGeneratedRuntimeModules(EngineCore);", StringComparison.Ordinal);
+        Assert.True(registrationIndex > initializeIndex, "Physics runtime registration must happen after Core initialization.");
     }
 }

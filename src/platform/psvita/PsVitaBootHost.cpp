@@ -11,6 +11,7 @@
 
 #if HELENGINE_PSVITA_HAS_GENERATED_CORE
 #include "Core.hpp"
+#include "GeneratedRuntimeModuleRegistration.hpp"
 #include "CameraClearSettings.hpp"
 #include "ContentManager.hpp"
 #include "CoreInitializationOptions.hpp"
@@ -31,7 +32,6 @@
 #include "runtime/native_exceptions.hpp"
 #include "platform/psvita/audio/PsVitaAudioBackend.hpp"
 #include "platform/psvita/PsVitaInputBackend.hpp"
-#include "platform/psvita/PsVitaRuntimeDiagnosticsProvider.hpp"
 #include "platform/psvita/PsVitaRuntimeSceneCatalogFactory.hpp"
 #include "platform/psvita/rendering/PsVitaGxmRenderer.hpp"
 #include "platform/psvita/rendering/PsVitaRenderManager2D.hpp"
@@ -107,7 +107,6 @@ namespace helengine::psvita {
         , EngineRenderManager2D(nullptr)
         , EngineInputBackend(nullptr)
         , EngineAudioBackend(nullptr)
-        , EngineRuntimeDiagnosticsProvider(nullptr)
         , GxmRenderer(nullptr)
 #endif
     {
@@ -222,8 +221,6 @@ namespace helengine::psvita {
         EngineOptions->set_RenderList3DInitialCapacity(64);
         EngineOptions->set_CommitPendingSceneOperationsDuringDraw(false);
         EngineOptions->set_StandardPlatformInputConfiguration(BuildStandardPlatformInputConfiguration());
-        EngineRuntimeDiagnosticsProvider = new PsVitaRuntimeDiagnosticsProvider();
-        EngineOptions->set_RuntimeDiagnosticsProvider(EngineRuntimeDiagnosticsProvider);
         PsVitaRuntimeSceneCatalogFactory runtimeSceneCatalogFactory;
         EngineOptions->set_SceneCatalog(runtimeSceneCatalogFactory.Build());
 
@@ -236,6 +233,7 @@ namespace helengine::psvita {
         EngineAudioBackend = new PsVitaAudioBackend();
         EngineRenderManager3D->AddWindow(0, ScreenWidth, ScreenHeight);
         EngineCore->Initialize(EngineRenderManager3D, EngineRenderManager2D, EngineInputBackend, EnginePlatformInfo, EngineOptions);
+        RegisterGeneratedRuntimeModules(EngineCore);
         EngineCore->SetAudioBackend(EngineAudioBackend);
         AppendBootTrace("InitializeCore: success");
     }
@@ -285,6 +283,7 @@ namespace helengine::psvita {
                 AppendBootTrace("RunMainLoop: first update");
             }
             EngineCore->Update();
+            static_cast<PsVitaRenderManager3D*>(EngineRenderManager3D)->PrepareShadowMaps();
             if (firstFrame) {
                 AppendBootTrace("RunMainLoop: first begin frame");
             }

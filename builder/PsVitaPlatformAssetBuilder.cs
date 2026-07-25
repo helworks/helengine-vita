@@ -14,7 +14,7 @@ namespace helengine.psvita.builder;
 /// <summary>
 /// Implements the PS Vita platform asset builder contract consumed by the editor.
 /// </summary>
-public sealed class PsVitaPlatformAssetBuilder : IPlatformAssetBuilder {
+public sealed class PsVitaPlatformAssetBuilder : IPlatformAssetBuilder, IShaderBackendRegistryContributor, IPlatformShaderArtifactBuilder {
     /// <summary>
     /// Stable material field identifier used for the authored base color.
     /// </summary>
@@ -46,6 +46,46 @@ public sealed class PsVitaPlatformAssetBuilder : IPlatformAssetBuilder {
     const string VariantFieldId = "variant";
 
     /// <summary>
+    /// Stable material field identifier for the runtime parameter contract version.
+    /// </summary>
+    const string ParameterContractFieldId = "parameter-contract";
+
+    /// <summary>
+    /// Stable material field identifier used for the generic shadow-caster policy.
+    /// </summary>
+    const string CastsShadowsFieldId = "casts-shadows";
+
+    /// <summary>
+    /// Stable material field identifier used for the generic shadow-receiver policy.
+    /// </summary>
+    const string ReceivesShadowsFieldId = "receives-shadows";
+
+    /// <summary>
+    /// Stable engine-owned shader asset identity that uses the Vita Forward Standard Shader contract.
+    /// </summary>
+    const string ForwardStandardShaderAssetId = "ForwardStandardShader";
+
+    /// <summary>
+    /// Stable legacy engine-owned shader asset identity emitted by older Vita material definitions.
+    /// </summary>
+    const string LegacyForwardLambertShaderAssetId = "ForwardLambertShader";
+
+    /// <summary>
+    /// Legacy engine-owned vertex-program name emitted by older Vita material definitions.
+    /// </summary>
+    const string LegacyForwardLambertVertexProgramName = "VS";
+
+    /// <summary>
+    /// Legacy engine-owned pixel-program name emitted by older Vita material definitions.
+    /// </summary>
+    const string LegacyForwardLambertPixelProgramName = "PS";
+
+    /// <summary>
+    /// Parameter contract version implemented by the Forward Standard Shader artifact pair.
+    /// </summary>
+    const uint ForwardStandardParameterContractVersion = 1u;
+
+    /// <summary>
     /// Constant-buffer name used for the authored base color payload.
     /// </summary>
     const string BaseColorBufferName = "BaseColorBuffer";
@@ -66,10 +106,15 @@ public sealed class PsVitaPlatformAssetBuilder : IPlatformAssetBuilder {
     readonly PsVitaGeneratedRuntimeComponentSupportWriter GeneratedRuntimeComponentSupportWriter;
 
     /// <summary>
+    /// Host-to-device exchange used to compile all shader sources required by one cooked Vita build.
+    /// </summary>
+    readonly IPsVitaShaderCompilerExchange ShaderCompilerExchange;
+
+    /// <summary>
     /// Initializes the PS Vita builder with the default Docker-backed native build executor.
     /// </summary>
     public PsVitaPlatformAssetBuilder()
-        : this(new PsVitaNativeBuildExecutor(), new PsVitaPlatformCookSourceProcessor(), new PsVitaGeneratedRuntimeComponentSupportWriter()) {
+        : this(new PsVitaNativeBuildExecutor(), new PsVitaPlatformCookSourceProcessor(), new PsVitaGeneratedRuntimeComponentSupportWriter(), new PsVitaLazyShaderCompilerExchange()) {
     }
 
     /// <summary>
@@ -80,6 +125,7 @@ public sealed class PsVitaPlatformAssetBuilder : IPlatformAssetBuilder {
         NativeBuildExecutor = nativeBuildExecutor ?? throw new ArgumentNullException(nameof(nativeBuildExecutor));
         PlatformCookSourceProcessor = new PsVitaPlatformCookSourceProcessor();
         GeneratedRuntimeComponentSupportWriter = new PsVitaGeneratedRuntimeComponentSupportWriter();
+        ShaderCompilerExchange = new PsVitaLazyShaderCompilerExchange();
         Descriptor = new PlatformBuilderDescriptor(
             "helengine.psvita.builder",
             "1.0.0",
@@ -104,6 +150,34 @@ public sealed class PsVitaPlatformAssetBuilder : IPlatformAssetBuilder {
         NativeBuildExecutor = nativeBuildExecutor ?? throw new ArgumentNullException(nameof(nativeBuildExecutor));
         PlatformCookSourceProcessor = platformCookSourceProcessor ?? throw new ArgumentNullException(nameof(platformCookSourceProcessor));
         GeneratedRuntimeComponentSupportWriter = generatedRuntimeComponentSupportWriter ?? throw new ArgumentNullException(nameof(generatedRuntimeComponentSupportWriter));
+        ShaderCompilerExchange = new PsVitaLazyShaderCompilerExchange();
+        Descriptor = new PlatformBuilderDescriptor(
+            "helengine.psvita.builder",
+            "1.0.0",
+            "psvita",
+            new EngineCompatibilityRange("1.0.0", "999.0.0"),
+            new ManifestCompatibilityRange(1, 3),
+            ["psvita"],
+            ["debug"]);
+        Definition = PsVitaPlatformDefinitionFactory.Create();
+    }
+
+    /// <summary>
+    /// Initializes the PS Vita builder with every integration seam explicit for shader bundle testing.
+    /// </summary>
+    /// <param name="nativeBuildExecutor">Native build executor used by this builder instance.</param>
+    /// <param name="platformCookSourceProcessor">Builder-owned source processor used by this builder instance.</param>
+    /// <param name="generatedRuntimeComponentSupportWriter">Generated runtime component fallback writer used by this builder instance.</param>
+    /// <param name="shaderCompilerExchange">Host-to-device compiler exchange used by shader bundle cooking.</param>
+    internal PsVitaPlatformAssetBuilder(
+        IPsVitaNativeBuildExecutor nativeBuildExecutor,
+        IPsVitaPlatformCookSourceProcessor platformCookSourceProcessor,
+        PsVitaGeneratedRuntimeComponentSupportWriter generatedRuntimeComponentSupportWriter,
+        IPsVitaShaderCompilerExchange shaderCompilerExchange) {
+        NativeBuildExecutor = nativeBuildExecutor ?? throw new ArgumentNullException(nameof(nativeBuildExecutor));
+        PlatformCookSourceProcessor = platformCookSourceProcessor ?? throw new ArgumentNullException(nameof(platformCookSourceProcessor));
+        GeneratedRuntimeComponentSupportWriter = generatedRuntimeComponentSupportWriter ?? throw new ArgumentNullException(nameof(generatedRuntimeComponentSupportWriter));
+        ShaderCompilerExchange = shaderCompilerExchange ?? throw new ArgumentNullException(nameof(shaderCompilerExchange));
         Descriptor = new PlatformBuilderDescriptor(
             "helengine.psvita.builder",
             "1.0.0",
@@ -126,6 +200,27 @@ public sealed class PsVitaPlatformAssetBuilder : IPlatformAssetBuilder {
     public PlatformDefinition Definition { get; }
 
     /// <summary>
+    /// Registers the device-backed PS Vita shader compiler backend for PS Vita editor builds.
+    /// </summary>
+    /// <param name="shaderBackendRegistry">Registry that receives the PS Vita backend.</param>
+    public void RegisterShaderBackends(ShaderBackendRegistry shaderBackendRegistry) {
+        if (shaderBackendRegistry == null) {
+            throw new ArgumentNullException(nameof(shaderBackendRegistry));
+        }
+
+        shaderBackendRegistry.Register(new PsVitaShaderBackend(ShaderCompilerExchange));
+    }
+
+    /// <summary>
+    /// Compiles all material-referenced shader sources into the one runtime bundle consumed by the Vita renderer.
+    /// </summary>
+    /// <param name="request">Complete shader source and material lookup-key cook request.</param>
+    /// <returns>Explicit declaration for the emitted shader bundle.</returns>
+    public PlatformShaderArtifactCookResult CookShaderArtifacts(PlatformShaderArtifactCookRequest request) {
+        return new PsVitaShaderBundleCompiler(ShaderCompilerExchange).Cook(request);
+    }
+
+    /// <summary>
     /// Returns the builder-owned cooked material payload for one PS Vita material schema request.
     /// </summary>
     /// <param name="request">Material translation request to validate.</param>
@@ -137,19 +232,39 @@ public sealed class PsVitaPlatformAssetBuilder : IPlatformAssetBuilder {
 
         if (request.FieldValues.TryGetValue(ShaderAssetIdFieldId, out string shaderAssetId)
             && !string.IsNullOrWhiteSpace(shaderAssetId)) {
+            string vertexProgramName = GetRequiredFieldValue(request.FieldValues, VertexProgramFieldId);
+            string pixelProgramName = GetRequiredFieldValue(request.FieldValues, PixelProgramFieldId);
+            string variantName = GetRequiredFieldValue(request.FieldValues, VariantFieldId);
+            NormalizeLegacyForwardLambertMaterialReference(ref shaderAssetId, ref vertexProgramName, ref pixelProgramName, ref variantName);
+            string shaderDiffuseTextureAssetId = request.FieldValues.TryGetValue(TextureFieldId, out string authoredDiffuseTextureAssetId)
+                && !string.IsNullOrWhiteSpace(authoredDiffuseTextureAssetId)
+                ? authoredDiffuseTextureAssetId
+                : string.Empty;
             PsVitaCompiledShaderMaterialAsset cookedAsset = new() {
                 ShaderAssetId = shaderAssetId,
-                VertexProgramName = GetRequiredFieldValue(request.FieldValues, VertexProgramFieldId),
-                PixelProgramName = GetRequiredFieldValue(request.FieldValues, PixelProgramFieldId),
-                VariantName = GetRequiredFieldValue(request.FieldValues, VariantFieldId),
+                VertexProgramName = vertexProgramName,
+                PixelProgramName = pixelProgramName,
+                VariantName = variantName,
+                ParameterContractVersion = request.FieldValues.TryGetValue(ParameterContractFieldId, out string authoredParameterContractVersion)
+                    && !string.IsNullOrWhiteSpace(authoredParameterContractVersion)
+                    ? ParseParameterContractVersion(authoredParameterContractVersion)
+                    : ForwardStandardParameterContractVersion,
                 BaseColorAbgr = ParseBaseColorAbgr(request.FieldValues.TryGetValue(BaseColorFieldId, out string authoredShaderBaseColor)
                     ? authoredShaderBaseColor
-                    : "#ffffff")
+                    : "#ffffff"),
+                RequiresDiffuseTexture = !string.IsNullOrWhiteSpace(shaderDiffuseTextureAssetId),
+                DiffuseTextureAssetId = shaderDiffuseTextureAssetId,
+                CastsShadows = ResolveShadowFlag(request.FieldValues, CastsShadowsFieldId),
+                ReceivesShadows = ResolveShadowFlag(request.FieldValues, ReceivesShadowsFieldId)
             };
 
-            return new PlatformMaterialCookResult(
+            return PlatformMaterialCookResult.CreateWithDependencies(
                 new PsVitaCompiledShaderMaterialBinarySerializer().Serialize(cookedAsset),
-                [shaderAssetId]);
+                [new PlatformShaderDependency(
+                    cookedAsset.ShaderAssetId,
+                    cookedAsset.VertexProgramName,
+                    cookedAsset.PixelProgramName,
+                    cookedAsset.VariantName)]);
         }
 
         string baseColor = request.FieldValues.TryGetValue(BaseColorFieldId, out string authoredBaseColor)
@@ -178,6 +293,48 @@ public sealed class PsVitaPlatformAssetBuilder : IPlatformAssetBuilder {
         };
 
         return new PlatformMaterialCookResult(global::helengine.files.AssetSerializer.SerializeToBytes(materialAsset), []);
+    }
+
+    /// <summary>
+    /// Converts the one obsolete engine-owned Lambert material key into the current Standard Shader key without changing any user-authored shader mapping.
+    /// </summary>
+    /// <param name="shaderAssetId">Shader asset identity to normalize.</param>
+    /// <param name="vertexProgramName">Vertex program identity to normalize.</param>
+    /// <param name="pixelProgramName">Pixel program identity to normalize.</param>
+    /// <param name="variantName">Shader variant identity to normalize.</param>
+    static void NormalizeLegacyForwardLambertMaterialReference(
+        ref string shaderAssetId,
+        ref string vertexProgramName,
+        ref string pixelProgramName,
+        ref string variantName) {
+        if (!string.Equals(shaderAssetId, LegacyForwardLambertShaderAssetId, StringComparison.Ordinal)
+            || !string.Equals(vertexProgramName, LegacyForwardLambertVertexProgramName, StringComparison.Ordinal)
+            || !string.Equals(pixelProgramName, LegacyForwardLambertPixelProgramName, StringComparison.Ordinal)
+            || (!string.Equals(variantName, "default", StringComparison.Ordinal)
+                && !string.Equals(variantName, "ForwardLambertOpaque", StringComparison.Ordinal))) {
+            return;
+        }
+
+        shaderAssetId = ForwardStandardShaderAssetId;
+        vertexProgramName = "ForwardStandardShader.vs";
+        pixelProgramName = "ForwardStandardShader.ps";
+        variantName = "default";
+    }
+
+    /// <summary>
+    /// Resolves one generic material shadow policy from the editor-provided cook field map.
+    /// </summary>
+    /// <param name="fieldValues">Complete material cook field map.</param>
+    /// <param name="fieldId">Stable shadow-policy field identifier.</param>
+    /// <returns>The authored Boolean policy, or the engine material default when an older caller omitted the additive field.</returns>
+    static bool ResolveShadowFlag(IReadOnlyDictionary<string, string> fieldValues, string fieldId) {
+        if (!fieldValues.TryGetValue(fieldId, out string text) || string.IsNullOrWhiteSpace(text)) {
+            return true;
+        } else if (bool.TryParse(text, out bool value)) {
+            return value;
+        }
+
+        throw new InvalidOperationException($"PS Vita material field '{fieldId}' must be Boolean.");
     }
 
     /// <summary>
@@ -857,6 +1014,19 @@ public sealed class PsVitaPlatformAssetBuilder : IPlatformAssetBuilder {
         }
 
         return fieldValue;
+    }
+
+    /// <summary>
+    /// Parses one positive material parameter-contract version.
+    /// </summary>
+    /// <param name="serializedVersion">Serialized decimal version.</param>
+    /// <returns>Positive contract version.</returns>
+    static uint ParseParameterContractVersion(string serializedVersion) {
+        if (!uint.TryParse(serializedVersion, out uint version) || version == 0u) {
+            throw new InvalidOperationException("PS Vita shader-backed materials require a positive parameter contract version.");
+        }
+
+        return version;
     }
 
     /// <summary>

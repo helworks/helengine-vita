@@ -43,6 +43,16 @@ namespace helengine::psvita::rendering {
         VariantNameValue = variantName;
     }
 
+    /// Gets the runtime parameter contract version required by this material.
+    std::uint32_t PsVitaCompiledShaderRuntimeMaterial::GetParameterContractVersion() const {
+        return ParameterContractVersionValue;
+    }
+
+    /// Sets the runtime parameter contract version required by this material.
+    void PsVitaCompiledShaderRuntimeMaterial::SetParameterContractVersion(std::uint32_t parameterContractVersion) {
+        ParameterContractVersionValue = parameterContractVersion;
+    }
+
     /// Gets the packed ABGR base color referenced by this runtime material.
     std::uint32_t PsVitaCompiledShaderRuntimeMaterial::GetBaseColorAbgr() const {
         return BaseColorAbgrValue;
@@ -51,6 +61,46 @@ namespace helengine::psvita::rendering {
     /// Sets the packed ABGR base color referenced by this runtime material.
     void PsVitaCompiledShaderRuntimeMaterial::SetBaseColorAbgr(std::uint32_t baseColorAbgr) {
         BaseColorAbgrValue = baseColorAbgr;
+    }
+
+    /// Gets whether this material requires one diffuse texture for its selected shader profile.
+    bool PsVitaCompiledShaderRuntimeMaterial::GetRequiresDiffuseTexture() const {
+        return RequiresDiffuseTextureValue;
+    }
+
+    /// Sets whether this material requires one diffuse texture for its selected shader profile.
+    void PsVitaCompiledShaderRuntimeMaterial::SetRequiresDiffuseTexture(bool requiresDiffuseTexture) {
+        RequiresDiffuseTextureValue = requiresDiffuseTexture;
+    }
+
+    /// Gets the cooked diffuse texture asset identity required by this material.
+    const std::string& PsVitaCompiledShaderRuntimeMaterial::GetDiffuseTextureAssetId() const {
+        return DiffuseTextureAssetIdValue;
+    }
+
+    /// Sets the cooked diffuse texture asset identity required by this material.
+    void PsVitaCompiledShaderRuntimeMaterial::SetDiffuseTextureAssetId(const std::string& diffuseTextureAssetId) {
+        DiffuseTextureAssetIdValue = diffuseTextureAssetId;
+    }
+
+    /// Gets whether this material contributes geometry to directional shadow depth passes.
+    bool PsVitaCompiledShaderRuntimeMaterial::GetCastsShadows() const {
+        return CastsShadowsValue;
+    }
+
+    /// Sets whether this material contributes geometry to directional shadow depth passes.
+    void PsVitaCompiledShaderRuntimeMaterial::SetCastsShadows(bool castsShadows) {
+        CastsShadowsValue = castsShadows;
+    }
+
+    /// Gets whether this material receives directional shadow attenuation in forward passes.
+    bool PsVitaCompiledShaderRuntimeMaterial::GetReceivesShadows() const {
+        return ReceivesShadowsValue;
+    }
+
+    /// Sets whether this material receives directional shadow attenuation in forward passes.
+    void PsVitaCompiledShaderRuntimeMaterial::SetReceivesShadows(bool receivesShadows) {
+        ReceivesShadowsValue = receivesShadows;
     }
 }
 

@@ -50,6 +50,15 @@ public sealed class PsVitaPlatformAssetBuilderTests {
             capability.SettingsContractId == "psvita-font-atlas-texture" &&
             capability.OutputFileExtension == ".hetex");
 
+        PlatformMaterialSchemaDefinition materialSchema = Assert.Single(builder.Definition.MaterialSchemas);
+        Assert.Contains(materialSchema.Fields, field => field.FieldId == "shader-asset-id");
+        Assert.Contains(materialSchema.Fields, field => field.FieldId == "vertex-program" && field.DefaultValue == "ForwardStandardShader.vs");
+        Assert.Contains(materialSchema.Fields, field => field.FieldId == "pixel-program" && field.DefaultValue == "ForwardStandardShader.ps");
+        Assert.Contains(materialSchema.Fields, field => field.FieldId == "variant" && field.DefaultValue == BuiltInMaterialIds.StandardForwardVariantName);
+        Assert.DoesNotContain(materialSchema.Fields, field => field.FieldId == "vertex-artifact-hash");
+        Assert.DoesNotContain(materialSchema.Fields, field => field.FieldId == "fragment-artifact-hash");
+        Assert.Contains(materialSchema.Fields, field => field.FieldId == "parameter-contract");
+
         string platformDefinitionFactoryPath = PsVitaRepositoryPathResolver.ResolvePath("builder", "PsVitaPlatformDefinitionFactory.cs");
         string platformDefinitionFactorySource = File.ReadAllText(platformDefinitionFactoryPath);
         Assert.Contains("\"generated-math-convention\"", platformDefinitionFactorySource, StringComparison.Ordinal);
@@ -402,6 +411,9 @@ public sealed class PsVitaPlatformAssetBuilderTests {
                 ["vertex-program"] = "ForwardSolidColorShader.vs",
                 ["pixel-program"] = "ForwardSolidColorShader.ps",
                 ["variant"] = "Mesh",
+                ["vertex-artifact-hash"] = "VERTEXHASH",
+                ["fragment-artifact-hash"] = "FRAGMENTHASH",
+                ["parameter-contract"] = "1",
                 ["base-color"] = "#ffffffff"
             }));
 
@@ -410,8 +422,95 @@ public sealed class PsVitaPlatformAssetBuilderTests {
         Assert.Equal("ForwardSolidColorShader.vs", materialAsset.VertexProgramName);
         Assert.Equal("ForwardSolidColorShader.ps", materialAsset.PixelProgramName);
         Assert.Equal("Mesh", materialAsset.VariantName);
+        Assert.Equal(1u, materialAsset.ParameterContractVersion);
         Assert.Equal(0xFFFFFFFFu, materialAsset.BaseColorAbgr);
         Assert.Equal(["ForwardSolidColorShader"], result.ReferencedShaderAssetIds);
+        PlatformShaderDependency dependency = Assert.Single(result.ReferencedShaderDependencies);
+        Assert.Equal("ForwardSolidColorShader", dependency.ShaderAssetId);
+        Assert.Equal("ForwardSolidColorShader.vs", dependency.VertexProgramName);
+        Assert.Equal("ForwardSolidColorShader.ps", dependency.PixelProgramName);
+        Assert.Equal("Mesh", dependency.VariantName);
+    }
+
+    /// <summary>
+    /// Verifies legacy Vita shader-backed material overrides bind the verified forward-Lambert artifact pair when they do not yet author artifact identities.
+    /// </summary>
+    [Fact]
+    public void CookMaterial_whenShaderArtifactFieldsAreAbsent_binds_verified_forward_lambert_artifacts() {
+        PsVitaPlatformAssetBuilder builder = new();
+
+        PlatformMaterialCookResult result = builder.CookMaterial(new PlatformMaterialCookRequest(
+            "materials/rendering/cube_test_solid.hasset",
+            "materials/rendering/cube_test_solid.hasset",
+            "psvita",
+            "debug",
+            "default",
+            "standard-shader",
+            new Dictionary<string, string> {
+                ["shader-asset-id"] = "ForwardStandardShader",
+                ["vertex-program"] = "ForwardStandardShader.vs",
+                ["pixel-program"] = "ForwardStandardShader.ps",
+                ["variant"] = "Mesh",
+                ["base-color"] = "#ffffffff"
+            }));
+
+        PsVitaCompiledShaderMaterialAsset materialAsset = new PsVitaCompiledShaderMaterialBinarySerializer().Deserialize(result.CookedMaterialBytes);
+        Assert.Equal(1u, materialAsset.ParameterContractVersion);
+    }
+
+    /// <summary>
+    /// Verifies shader-backed materials do not claim an authored diffuse texture when the material does not reference one.
+    /// </summary>
+    [Fact]
+    public void CookMaterial_whenShaderHasNoDiffuseTexture_preservesTheMissingTextureReference() {
+        PsVitaPlatformAssetBuilder builder = new();
+
+        PlatformMaterialCookResult result = builder.CookMaterial(new PlatformMaterialCookRequest(
+            "materials/rendering/colored_cube.hasset",
+            "materials/rendering/colored_cube.hasset",
+            "psvita",
+            "debug",
+            "default",
+            "standard-shader",
+            new Dictionary<string, string> {
+                ["shader-asset-id"] = "ForwardStandardShader",
+                ["vertex-program"] = "ForwardStandardShader.vs",
+                ["pixel-program"] = "ForwardStandardShader.ps",
+                ["variant"] = "default",
+                ["base-color"] = "#ffffffff"
+            }));
+
+        PsVitaCompiledShaderMaterialAsset materialAsset = new PsVitaCompiledShaderMaterialBinarySerializer().Deserialize(result.CookedMaterialBytes);
+        Assert.False(materialAsset.RequiresDiffuseTexture);
+        Assert.Equal(string.Empty, materialAsset.DiffuseTextureAssetId);
+    }
+
+    /// <summary>
+    /// Verifies material cooking preserves the authored shader variant instead of replacing it from the shader asset identity.
+    /// </summary>
+    [Fact]
+    public void CookMaterial_whenShaderUsesDefaultVariant_preservesTheAuthoredVariant() {
+        PsVitaPlatformAssetBuilder builder = new();
+
+        PlatformMaterialCookResult result = builder.CookMaterial(new PlatformMaterialCookRequest(
+            "materials/rendering/colored_cube.hasset",
+            "materials/rendering/colored_cube.hasset",
+            "psvita",
+            "debug",
+            "default",
+            "standard-shader",
+            new Dictionary<string, string> {
+                ["shader-asset-id"] = "ForwardStandardShader",
+                ["vertex-program"] = "ForwardStandardShader.vs",
+                ["pixel-program"] = "ForwardStandardShader.ps",
+                ["variant"] = "default",
+                ["base-color"] = "#ffffffff"
+            }));
+
+        PsVitaCompiledShaderMaterialAsset materialAsset = new PsVitaCompiledShaderMaterialBinarySerializer().Deserialize(result.CookedMaterialBytes);
+        PlatformShaderDependency dependency = Assert.Single(result.ReferencedShaderDependencies);
+        Assert.Equal("default", materialAsset.VariantName);
+        Assert.Equal("default", dependency.VariantName);
     }
 
     /// <summary>
@@ -520,6 +619,48 @@ public sealed class PsVitaPlatformAssetBuilderTests {
     }
 
     /// <summary>
+    /// Verifies the PVM1 payload preserves the normal array required by the strict Forward Lambert vertex stream.
+    /// </summary>
+    [Fact]
+    public void PackedModelSerializer_whenModelCarriesNormals_writesVersionThreeAlignedNormals() {
+        ModelAsset modelAsset = new() {
+            Positions = [
+                new float3(0f, 0f, 0f),
+                new float3(1f, 0f, 0f),
+                new float3(0f, 1f, 0f)
+            ],
+            Normals = [
+                new float3(0f, 0f, 1f),
+                new float3(0f, 1f, 0f),
+                new float3(1f, 0f, 0f)
+            ],
+            BoundsMin = new float3(0f, 0f, 0f),
+            BoundsMax = new float3(1f, 1f, 0f),
+            Indices32 = [0u, 1u, 2u],
+            Submeshes = []
+        };
+
+        byte[] bytes = PsVitaPackedModelAssetBinarySerializer.SerializeModelAssetToBytes(modelAsset);
+
+        using MemoryStream stream = new(bytes, writable: false);
+        using BinaryReader reader = new(stream);
+        Assert.Equal(PsVitaPackedModelAssetBinarySerializer.Magic.ToArray(), reader.ReadBytes(4));
+        Assert.Equal(3u, reader.ReadUInt32());
+        Assert.Equal(2, reader.ReadInt32());
+        Assert.Equal(3, reader.ReadInt32());
+        for (int positionIndex = 0; positionIndex < 3; positionIndex++) {
+            reader.ReadSingle();
+            reader.ReadSingle();
+            reader.ReadSingle();
+        }
+
+        Assert.Equal(3, reader.ReadInt32());
+        Assert.Equal(0f, reader.ReadSingle());
+        Assert.Equal(0f, reader.ReadSingle());
+        Assert.Equal(1f, reader.ReadSingle());
+    }
+
+    /// <summary>
     /// Verifies the Vita builder executes one builder-owned font-atlas cook work item and writes the cooked atlas beside the packaged font.
     /// </summary>
     [Fact]
@@ -623,6 +764,72 @@ public sealed class PsVitaPlatformAssetBuilderTests {
     }
 
     /// <summary>
+    /// Verifies the builder does not stage legacy per-artifact PVSA files because shader bundles are supplied by the editor cook manifest.
+    /// </summary>
+    [Fact]
+    public async Task BuildAsync_doesNotStageLegacyForwardLambertShaderArtifacts() {
+        string workingRoot = Path.Combine(Path.GetTempPath(), "helengine-psvita-builder-tests-" + Guid.NewGuid().ToString("N"));
+        string outputRoot = Path.Combine(workingRoot, "out");
+        string sourceRoot = Path.Combine(workingRoot, "project");
+        string generatedCoreRoot = Path.Combine(workingRoot, "generated-core");
+        string sceneSourcePath = Path.Combine(sourceRoot, "scenes", "startup.hasset");
+
+        Directory.CreateDirectory(Path.GetDirectoryName(sceneSourcePath));
+        Directory.CreateDirectory(generatedCoreRoot);
+        File.WriteAllBytes(sceneSourcePath, CreateCookedSceneBytes());
+
+        string previousDirectory = Directory.GetCurrentDirectory();
+        try {
+            Directory.SetCurrentDirectory(sourceRoot);
+
+            PlatformBuildManifest manifest = new(
+                1,
+                "project",
+                "1.0.0",
+                "1.0.0",
+                "psvita",
+                "1.0.0",
+                "startup",
+                [new PlatformBuildScene("startup", "Startup", "scenes/startup.hasset", [], [new KeyValuePair<string, string>("cooked-relative-path", "scenes/startup.hasset")])],
+                [],
+                [],
+                [],
+                [],
+                new PlatformContainerWritePlan(string.Empty, []));
+            PlatformBuildRequest request = new(
+                manifest,
+                [new PlatformBuildTargetVariant("psvita-default", "psvita", "psvita", "debug")],
+                [new PlatformCookProfile("debug", "Debug", new PlatformCookProfileCapabilities("psvita", "raw", "rgba", "psvita-scene-v1", PlatformSerializationEndianness.LittleEndian))],
+                outputRoot,
+                Path.Combine(workingRoot, "tmp"),
+                "debug",
+                "psvita-forward",
+                "default",
+                new Dictionary<string, string>(),
+                new Dictionary<string, string>(),
+                new Dictionary<string, string>(),
+                generatedCoreRoot,
+                "psvita-memory-card",
+                "vpk-package");
+            RecordingPsVitaNativeBuildExecutor nativeBuildExecutor = new();
+
+            PlatformBuildReport report = await new PsVitaPlatformAssetBuilder(nativeBuildExecutor).BuildAsync(
+                request,
+                new RecordingProgressReporter(),
+                new RecordingDiagnosticReporter(),
+                CancellationToken.None);
+
+            Assert.True(report.Succeeded);
+            Assert.False(Directory.Exists(Path.Combine(nativeBuildExecutor.StagedContentRootPath, "shaders")));
+        } finally {
+            Directory.SetCurrentDirectory(previousDirectory);
+            if (Directory.Exists(workingRoot)) {
+                Directory.Delete(workingRoot, true);
+            }
+        }
+    }
+
+    /// <summary>
     /// Creates one minimal cooked scene payload that contains the supplied serialized component type identifiers.
     /// </summary>
     /// <param name="componentTypeIds">Serialized component type identifiers to include beneath one root entity.</param>
@@ -660,6 +867,11 @@ public sealed class PsVitaPlatformAssetBuilderTests {
                 new float3(0f, 0f, 0f),
                 new float3(1f, 0f, 0f),
                 new float3(0f, 1f, 0f)
+            ],
+            Normals = [
+                new float3(0f, 0f, 1f),
+                new float3(0f, 0f, 1f),
+                new float3(0f, 0f, 1f)
             ],
             BoundsMin = new float3(0f, 0f, 0f),
             BoundsMax = new float3(1f, 1f, 0f),

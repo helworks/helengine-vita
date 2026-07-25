@@ -25,6 +25,22 @@ public sealed class PsVitaCompiledShaderMaterialSourceAuditTests {
         Assert.Contains("const string VariantFieldId = \"variant\";", builderSource, StringComparison.Ordinal);
         Assert.Contains("PsVitaCompiledShaderMaterialAsset cookedAsset = new()", builderSource, StringComparison.Ordinal);
         Assert.Contains("new PsVitaCompiledShaderMaterialBinarySerializer().Serialize(cookedAsset)", builderSource, StringComparison.Ordinal);
-        Assert.Contains("[shaderAssetId]", builderSource, StringComparison.Ordinal);
+        Assert.Contains("PlatformShaderDependency", builderSource, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Verifies the native material reader preserves an empty Standard diffuse asset identity so the renderer can bind its white fallback texture.
+    /// </summary>
+    [Fact]
+    public void Source_whenReadingStandardMaterialWithoutDiffuseTexture_allowsTheRendererFallbackContract() {
+        string readerPath = PsVitaRepositoryPathResolver.ResolvePath("src", "platform", "psvita", "rendering", "PsVitaCompiledShaderMaterialReader.cpp");
+        string renderManagerPath = PsVitaRepositoryPathResolver.ResolvePath("src", "platform", "psvita", "rendering", "PsVitaRenderManager3D.cpp");
+        string readerSource = File.ReadAllText(readerPath);
+        string renderManagerSource = File.ReadAllText(renderManagerPath);
+
+        Assert.Contains("TryReadBoolean(stream, &decodedMaterial.RequiresDiffuseTexture)", readerSource, StringComparison.Ordinal);
+        Assert.Contains("TryReadString(stream, decodedMaterial.DiffuseTextureAssetId)", readerSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("Textured PS Vita compiled-shader materials require one diffuse texture asset id.", readerSource, StringComparison.Ordinal);
+        Assert.Contains("compiledShaderMaterial.RequiresDiffuseTexture && !compiledShaderMaterial.DiffuseTextureAssetId.empty()", renderManagerSource, StringComparison.Ordinal);
     }
 }

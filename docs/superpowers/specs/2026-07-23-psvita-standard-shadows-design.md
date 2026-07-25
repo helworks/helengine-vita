@@ -6,7 +6,7 @@ Add the first shadow tier through the shared Standard Shader while preserving pl
 
 ## Scope
 
-The first tier supports one shadow-enabled directional light, one shadow map, and opaque Standard-material meshes. It uses a 256 by 256 depth map with a hard depth comparison and configurable depth bias on PS Vita. The feature must run through the real Vita shader compiler and use artifact-backed GXM programs at runtime.
+The first tier supports one shadow-enabled directional light, one shadow map, and opaque Standard-material meshes. It uses a 256 by 256 depth map with a hard depth comparison and configurable depth bias on PS Vita. The Vita implementation keeps Vita2D as the owner of the active GXM scene: it uses Vita2D's offscreen render-target API for the depth pass, then resumes the normal target for the main pass. The feature must run through the real Vita shader compiler and use artifact-backed GXM programs at runtime.
 
 For now, every shader-capable target in scope (Windows, PS Vita, and Wii U) compiles all Standard Shader variants. Platforms without shader support do not compile shader artifacts. There is deliberately no per-platform shadow-capability matrix in this tier.
 

@@ -11,9 +11,6 @@ class PlatformInfo;
 class RenderManager3D;
 class RenderManager2D;
 class IInputBackend;
-namespace helengine::psvita {
-    class PsVitaRuntimeDiagnosticsProvider;
-}
 namespace helengine::psvita::rendering {
     class PsVitaGxmRenderer;
 }
@@ -89,9 +86,6 @@ namespace helengine::psvita {
 
         /// Stores the temporary audio backend passed into generated-core startup.
         ::IAudioBackend* EngineAudioBackend;
-
-        /// Stores the runtime diagnostics provider that records generated-core scene transition and entity disposal stages into the boot trace.
-        PsVitaRuntimeDiagnosticsProvider* EngineRuntimeDiagnosticsProvider;
 
         /// Stores the native PS Vita GXM renderer that owns generated-core frame submission and presentation.
         rendering::PsVitaGxmRenderer* GxmRenderer;

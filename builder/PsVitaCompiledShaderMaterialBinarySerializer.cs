@@ -14,7 +14,7 @@ public sealed class PsVitaCompiledShaderMaterialBinarySerializer {
     /// <summary>
     /// Stable compiled-shader material payload version.
     /// </summary>
-    public const uint Version = 1u;
+    public const uint Version = 5u;
 
     /// <summary>
     /// Serializes one PS Vita compiled-shader material payload into bytes.
@@ -32,6 +32,8 @@ public sealed class PsVitaCompiledShaderMaterialBinarySerializer {
             throw new InvalidOperationException("PS Vita compiled-shader materials require one pixel-program name.");
         } else if (string.IsNullOrWhiteSpace(asset.VariantName)) {
             throw new InvalidOperationException("PS Vita compiled-shader materials require one shader variant name.");
+        } else if (asset.ParameterContractVersion == 0u) {
+            throw new InvalidOperationException("PS Vita compiled-shader materials require one parameter contract version.");
         }
 
         using MemoryStream stream = new();
@@ -42,7 +44,12 @@ public sealed class PsVitaCompiledShaderMaterialBinarySerializer {
         WriteString(writer, asset.VertexProgramName);
         WriteString(writer, asset.PixelProgramName);
         WriteString(writer, asset.VariantName);
+        writer.Write(asset.ParameterContractVersion);
         writer.Write(asset.BaseColorAbgr);
+        writer.Write(asset.RequiresDiffuseTexture);
+        WriteString(writer, asset.DiffuseTextureAssetId);
+        writer.Write(asset.CastsShadows);
+        writer.Write(asset.ReceivesShadows);
         return stream.ToArray();
     }
 
@@ -70,7 +77,12 @@ public sealed class PsVitaCompiledShaderMaterialBinarySerializer {
             VertexProgramName = ReadString(reader),
             PixelProgramName = ReadString(reader),
             VariantName = ReadString(reader),
-            BaseColorAbgr = reader.ReadUInt32()
+            ParameterContractVersion = reader.ReadUInt32(),
+            BaseColorAbgr = reader.ReadUInt32(),
+            RequiresDiffuseTexture = reader.ReadBoolean(),
+            DiffuseTextureAssetId = ReadString(reader),
+            CastsShadows = reader.ReadBoolean(),
+            ReceivesShadows = reader.ReadBoolean()
         };
     }
 

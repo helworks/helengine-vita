@@ -13,7 +13,7 @@ namespace {
     constexpr std::uint8_t PsVitaCompiledShaderMaterialMagic[4] = { 'P', 'V', 'M', 'T' };
 
     /// Stores the supported cooked PS Vita compiled-shader material payload version.
-    constexpr std::uint32_t PsVitaCompiledShaderMaterialVersion = 1u;
+    constexpr std::uint32_t PsVitaCompiledShaderMaterialVersion = 5u;
 }
 
 namespace helengine::psvita::rendering {
@@ -50,8 +50,17 @@ namespace helengine::psvita::rendering {
                 || !TryReadString(stream, decodedMaterial.VertexProgramName)
                 || !TryReadString(stream, decodedMaterial.PixelProgramName)
                 || !TryReadString(stream, decodedMaterial.VariantName)
-                || !TryReadUInt32(stream, &decodedMaterial.BaseColorAbgr)) {
+                || !TryReadUInt32(stream, &decodedMaterial.ParameterContractVersion)
+                || !TryReadUInt32(stream, &decodedMaterial.BaseColorAbgr)
+                || !TryReadBoolean(stream, &decodedMaterial.RequiresDiffuseTexture)
+                || !TryReadString(stream, decodedMaterial.DiffuseTextureAssetId)
+                || !TryReadBoolean(stream, &decodedMaterial.CastsShadows)
+                || !TryReadBoolean(stream, &decodedMaterial.ReceivesShadows)) {
                 throw std::runtime_error("PS Vita compiled-shader material payload is truncated.");
+            }
+
+            if (decodedMaterial.ParameterContractVersion == 0u) {
+                throw std::runtime_error("PS Vita compiled-shader material parameter contract version is invalid.");
             }
 
             delete stream;
@@ -105,6 +114,21 @@ namespace helengine::psvita::rendering {
         }
 
         *value = static_cast<int32_t>(unsignedValue);
+        return true;
+    }
+
+    /// Reads one serialized Boolean field from the supplied stream.
+    bool PsVitaCompiledShaderMaterialReader::TryReadBoolean(FileStream* stream, bool* value) {
+        if (stream == nullptr || value == nullptr) {
+            return false;
+        }
+
+        std::uint8_t encoded = 0u;
+        if (!TryReadExact(stream, &encoded, sizeof(encoded)) || encoded > 1u) {
+            return false;
+        }
+
+        *value = encoded != 0u;
         return true;
     }
 

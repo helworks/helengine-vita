@@ -23,8 +23,23 @@ namespace helengine::psvita::rendering {
         /// Stores the shader variant name referenced by this cooked material.
         std::string VariantName;
 
+        /// Stores the runtime parameter contract version required by this material.
+        std::uint32_t ParameterContractVersion = 0u;
+
         /// Stores the packed ABGR base color referenced by this cooked material.
         std::uint32_t BaseColorAbgr = 0xFFFFFFFFu;
+
+        /// Stores whether the selected shader profile requires one diffuse texture at draw time.
+        bool RequiresDiffuseTexture = false;
+
+        /// Stores the cooked diffuse texture asset identity required by a textured shader profile.
+        std::string DiffuseTextureAssetId;
+
+        /// Stores whether this material contributes geometry to directional shadow depth passes.
+        bool CastsShadows = true;
+
+        /// Stores whether this material receives directional shadow attenuation in forward passes.
+        bool ReceivesShadows = true;
     };
 
     /// Reads the PS Vita cooked compiled-shader material payload emitted by the builder.
@@ -42,6 +57,9 @@ namespace helengine::psvita::rendering {
 
         /// Reads one little-endian signed 32-bit integer from the supplied stream.
         static bool TryReadInt32(FileStream* stream, int32_t* value);
+
+        /// Reads one serialized Boolean field from the supplied stream.
+        static bool TryReadBoolean(FileStream* stream, bool* value);
 
         /// Reads one UTF-8 string with an explicit byte-length prefix from the supplied stream.
         static bool TryReadString(FileStream* stream, std::string& value);

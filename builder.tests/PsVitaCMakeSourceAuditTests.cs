@@ -20,6 +20,30 @@ public sealed class PsVitaCMakeSourceAuditTests {
     }
 
     /// <summary>
+    /// Verifies the VPK includes an application icon so emulator and Vita shell metadata loading can complete before the title starts.
+    /// </summary>
+    [Fact]
+    public void CMake_whenCreatingTheVpk_packagesTheApplicationIcon() {
+        string cmakePath = PsVitaRepositoryPathResolver.ResolvePath("CMakeLists.txt");
+        string cmakeSource = File.ReadAllText(cmakePath);
+
+        Assert.Contains("sce_sys/icon0-indexed.png", cmakeSource, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Verifies the packaged application icon uses the indexed PNG representation required by the Vita installer.
+    /// </summary>
+    [Fact]
+    public void CMake_whenCreatingTheVpk_packagesAnIndexedApplicationIcon() {
+        string iconPath = PsVitaRepositoryPathResolver.ResolvePath("sce_sys", "icon0-indexed.png");
+        byte[] iconHeader = File.ReadAllBytes(iconPath);
+
+        Assert.True(iconHeader.Length >= 26, "Expected the packaged icon to contain a complete PNG IHDR header.");
+        Assert.Equal((byte)8, iconHeader[24]);
+        Assert.Equal((byte)3, iconHeader[25]);
+    }
+
+    /// <summary>
     /// Verifies the PS Vita link step pulls in pthread when the generated core uses the shared std::thread runtime surface.
     /// </summary>
     [Fact]

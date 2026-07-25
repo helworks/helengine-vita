@@ -181,6 +181,27 @@ git commit -m "Load Vita shader artifacts through GXM"
 
 ### Task 5: Validate on real hardware and close the pipeline
 
+#### Progress checkpoint — 2026-07-22
+
+- [x] Built a replacement development VPK with the marker-triggered exporter and generated demodisc content.
+- [x] Fixed the exporter launcher so `export-forward-lambert.flag` is removed only after both stages succeed.
+- [x] Added `ux0:data/helengine/shader-export.log` stage/setup diagnostics for hardware-side retrieval.
+- [x] Added support for the editor's current `generated_unity.cpp` generated-core filename in the Vita CMake build.
+- [x] Verified 11 shader-artifact/export source and binary tests pass.
+- [x] Diagnosed the first hardware export attempt: `sceSysmoduleLoadModule(SCE_SYSMODULE_SHACCCG)` returned `0x805A1000` because the PSM shader compiler is not a system module.
+- [x] Updated the exporter to start `ur0:/data/libshacccg.suprx` through `sceKernelLoadStartModule`, matching the VitaSDK runtime compiler contract.
+- [x] Corrected the loader path to the valid Vita mount syntax: `ur0:/data/libshacccg.suprx`.
+- [x] Matched vitaShaRK's required compiler initialization: enabled `SceShaccCgExt`, registered allocator callbacks, initialized the trivial callback list, and linked the taiHEN stub required by the extension library.
+- [x] Verified real-Vita compiler artifacts returned by the device: `VP` is `AAC04CFCDFE9BA93F743A444674B8E08D15817770730A355812EEB79EC79B962` (480 program bytes) and `FP` is `9A42A6494B61D7C1162BC867D67842DCDC7AC9610086CF211520FEC396C1FBC7` (492 program bytes), both from `libshacccg` SDK 3.0.0 and both host hash-validated.
+- [x] Added verified artifact staging under `cooked/shaders/<artifact-hash>.pvsa`, with byte-for-byte staging coverage and artifact identity/stage validation before native packaging.
+- [x] Published GPU-Lambert artifact/program fields in the Vita material schema so editor cooking preserves the material binding instead of pruning it.
+- [x] Extended the editor cooked-artifact classifier to safely defer opaque `PVMT` material payloads while still identifying normal shader material assets.
+- [x] Built `C:\dev\helprojs\demodisc\vita-build-gpu-lambert-3\helengine_psvita.vpk` through the editor CLI. The archive contains both shader entries and the cube-test material begins with `PVMT`.
+- [x] Added the required `sce_sys/icon0.png` VPK metadata resource and an audit test after Vita3K failed before guest startup without it.
+- [x] Built `C:\dev\helprojs\demodisc\vita-build-gpu-lambert-6\helengine_psvita.vpk` through the editor CLI. The archive contains `sce_sys/icon0.png` and both real-Vita PVSA artifacts.
+- [x] Ran the installed `HLEN00001` title in Vita3K 0.2.1 without console mode. The runtime trace loaded `cube_test`, recognized `cubetestsolid.hasset` as a compiled-shader material, and Vita3K logged Vulkan GXM draw calls. This is a package/runtime smoke test only; real hardware remains the rendering and performance authority.
+- [ ] Install and boot the `vita-build-gpu-lambert-6` VPK on real Vita; confirm the test mesh renders with the GPU Lambert program.
+
 **Files:**
 - Create: `docs/psvita-shader-artifact-workflow.md`: the exact real-Vita export, host-import, cook, and runtime verification sequence.
 

@@ -146,6 +146,41 @@ public static class PsVitaPlatformDefinitionFactory {
                             PlatformMaterialFieldKind.AssetReference,
                             string.Empty,
                             false,
+                            []),
+                        new PlatformMaterialFieldDefinition(
+                            "shader-asset-id",
+                            "Shader Asset",
+                            PlatformMaterialFieldKind.Text,
+                            "ForwardStandardShader",
+                            false,
+                            []),
+                        new PlatformMaterialFieldDefinition(
+                            "vertex-program",
+                            "Vertex Program",
+                            PlatformMaterialFieldKind.Text,
+                            "ForwardStandardShader.vs",
+                            false,
+                            []),
+                        new PlatformMaterialFieldDefinition(
+                            "pixel-program",
+                            "Pixel Program",
+                            PlatformMaterialFieldKind.Text,
+                            "ForwardStandardShader.ps",
+                            false,
+                            []),
+                        new PlatformMaterialFieldDefinition(
+                            "variant",
+                            "Shader Variant",
+                            PlatformMaterialFieldKind.Text,
+                            BuiltInMaterialIds.StandardForwardVariantName,
+                            false,
+                            []),
+                        new PlatformMaterialFieldDefinition(
+                            "parameter-contract",
+                            "Parameter Contract",
+                            PlatformMaterialFieldKind.Text,
+                            "1",
+                            false,
                             [])
                     ])
             ],

@@ -1,5 +1,5 @@
 using System.Diagnostics;
-using System.Text;
+using helengine.baseplatform.Builders;
 
 namespace helengine.psvita.builder;
 
@@ -86,7 +86,6 @@ public sealed class PsVitaNativeBuildExecutor : IPsVitaNativeBuildExecutor {
     /// <param name="logPath">Log path for combined standard output and error.</param>
     /// <param name="cancellationToken">Cancellation token that can stop the process.</param>
     static void RunProcess(string fileName, IReadOnlyList<string> arguments, string workingDirectory, string logPath, CancellationToken cancellationToken) {
-        StringBuilder logBuilder = new();
         ProcessStartInfo startInfo = new() {
             FileName = fileName,
             WorkingDirectory = workingDirectory,
@@ -100,45 +99,12 @@ public sealed class PsVitaNativeBuildExecutor : IPsVitaNativeBuildExecutor {
             startInfo.ArgumentList.Add(arguments[index]);
         }
 
-        using Process process = Process.Start(startInfo) ?? throw new InvalidOperationException($"Failed to start '{fileName}'.");
-        using CancellationTokenRegistration cancellationRegistration = cancellationToken.Register(() => TryKillProcess(process));
-        process.OutputDataReceived += (_, eventArgs) => {
-            if (!string.IsNullOrEmpty(eventArgs.Data)) {
-                logBuilder.AppendLine(eventArgs.Data);
-            }
-        };
-        process.ErrorDataReceived += (_, eventArgs) => {
-            if (!string.IsNullOrEmpty(eventArgs.Data)) {
-                logBuilder.AppendLine(eventArgs.Data);
-            }
-        };
-        process.BeginOutputReadLine();
-        process.BeginErrorReadLine();
-
-        while (!process.HasExited) {
-            cancellationToken.ThrowIfCancellationRequested();
-            process.WaitForExit(100);
-        }
-
-        process.WaitForExit();
+        NativeProcessRunResult result = new NativeProcessRunner().Run(startInfo, cancellationToken);
         Directory.CreateDirectory(Path.GetDirectoryName(logPath) ?? workingDirectory);
-        File.WriteAllText(logPath, logBuilder.ToString());
+        File.WriteAllText(logPath, result.StandardOutput + result.StandardError);
 
-        if (process.ExitCode != 0) {
-            throw new InvalidOperationException($"Process '{fileName}' failed with exit code {process.ExitCode}. See '{logPath}'.");
-        }
-    }
-
-    /// <summary>
-    /// Attempts to stop one process tree during cancellation.
-    /// </summary>
-    /// <param name="process">Process to stop.</param>
-    static void TryKillProcess(Process process) {
-        try {
-            if (process != null && !process.HasExited) {
-                process.Kill(entireProcessTree: true);
-            }
-        } catch {
+        if (result.ExitCode != 0) {
+            throw new InvalidOperationException($"Process '{fileName}' failed with exit code {result.ExitCode}. See '{logPath}'.");
         }
     }
 }

@@ -186,16 +186,47 @@ public sealed class PsVitaRenderManager3DSourceAuditTests {
     }
 
     /// <summary>
-    /// Verifies the Vita 3D renderer is prepared to route runtime mesh submission through one direct solid-color GXM mesh path instead of the temporary projected triangle fallback.
+    /// Verifies the Vita 3D renderer routes runtime mesh submission through the artifact-backed Forward Standard GXM mesh path.
     /// </summary>
     [Fact]
-    public void Source_whenRoutingCubeTestThroughProgrammableMeshPath_usesSolidColorMeshSubmission() {
+    public void Source_whenRoutingCubeTestThroughProgrammableMeshPath_usesForwardStandardMeshSubmission() {
         string sourcePath = PsVitaRepositoryPathResolver.ResolvePath("src", "platform", "psvita", "rendering", "PsVitaRenderManager3D.cpp");
         string sourceCode = File.ReadAllText(sourcePath);
 
-        Assert.Contains("DrawSolidColorMesh", sourceCode, StringComparison.Ordinal);
+        Assert.Contains("DrawForwardStandardMesh", sourceCode, StringComparison.Ordinal);
+        Assert.DoesNotContain("DrawForwardLambertMesh(", sourceCode, StringComparison.Ordinal);
         Assert.Contains("ResolveSolidColorSubmeshColor", sourceCode, StringComparison.Ordinal);
         Assert.Contains("PsVitaCompiledShaderRuntimeMaterial", sourceCode, StringComparison.Ordinal);
         Assert.DoesNotContain("SubmitTriangleStrip", sourceCode, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Verifies packed Vita model loading restores the normal array that Forward Lambert requires for its second vertex attribute.
+    /// </summary>
+    [Fact]
+    public void Source_whenReadingPackedModels_restoresVersionThreeNormalsIntoRuntimeModels() {
+        string sourcePath = PsVitaRepositoryPathResolver.ResolvePath("src", "platform", "psvita", "rendering", "PsVitaPackedModelReader.cpp");
+        string sourceCode = File.ReadAllText(sourcePath);
+
+        Assert.Contains("PackedModelVersion = 3u", sourceCode, StringComparison.Ordinal);
+        Assert.Contains("std::vector<::float3> normals", sourceCode, StringComparison.Ordinal);
+        Assert.Contains("new PsVitaRuntimeModel(std::move(positions), std::move(normals))", sourceCode, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Verifies all 3D mesh rendering fails explicitly when Forward Standard cannot draw instead of submitting CPU-projected fallback triangles.
+    /// </summary>
+    [Fact]
+    public void Source_whenForwardStandardCannotDraw_doesNotSubmitCpuMeshFallbackTriangles() {
+        string sourcePath = PsVitaRepositoryPathResolver.ResolvePath("src", "platform", "psvita", "rendering", "PsVitaRenderManager3D.cpp");
+        string sourceCode = File.ReadAllText(sourcePath);
+
+        int forwardStandardAttemptIndex = sourceCode.IndexOf("if (TryDrawRuntimeModelWithSolidColorPath(worldViewProjection, world, meshComponent, runtimeModel))", StringComparison.Ordinal);
+        int strictFailureIndex = sourceCode.IndexOf("throw new InvalidOperationException(\"PS Vita 3D meshes require the artifact-backed Forward Standard GXM path.\")", StringComparison.Ordinal);
+        int projectedTriangleIndex = sourceCode.IndexOf("std::size_t attemptedTriangleCount", StringComparison.Ordinal);
+
+        Assert.True(forwardStandardAttemptIndex >= 0, "Expected one Forward Standard draw attempt.");
+        Assert.True(strictFailureIndex > forwardStandardAttemptIndex, "Expected strict GPU failure after the Forward Standard draw attempt.");
+        Assert.Equal(-1, projectedTriangleIndex);
     }
 }

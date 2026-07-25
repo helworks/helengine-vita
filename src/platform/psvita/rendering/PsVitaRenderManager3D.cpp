@@ -37,6 +37,7 @@
 #include "platform/psvita/rendering/PsVitaRenderManager2D.hpp"
 #include "platform/psvita/rendering/PsVitaRuntimeModel.hpp"
 #include "platform/psvita/rendering/PsVitaRuntimeSubmesh.hpp"
+#include "platform/psvita/rendering/PsVitaRuntimeTexture.hpp"
 #include "runtime/native_cast.hpp"
 #include "runtime/native_exceptions.hpp"
 #include "runtime/native_string.hpp"
@@ -54,13 +55,19 @@ namespace {
     constexpr float PsVitaDefaultFarPlaneDistance = 100.0f;
     constexpr float PsVitaMinimumProjectedW = 0.0001f;
     constexpr const char* PsVitaBootTracePath = "ux0:/data/helengine_psvita_boot.log";
-    int PsVitaCameraDiagnosticSamplesRemaining = 4;
+    constexpr bool EnablePsVitaBootTraceLogging = false;
+    constexpr std::uint32_t PsVitaForwardMeshParameterContractVersion = 1u;
+    int PsVitaCameraDiagnosticSamplesRemaining = 0;
     bool PsVitaLoggedProjectionDiagnostics = false;
-    int PsVitaProjectionDiagnosticSamplesRemaining = 12;
+    int PsVitaProjectionDiagnosticSamplesRemaining = 0;
     unsigned int PsVitaLoggedMeshDiagnosticsCount = 0u;
 
     /// Appends one PS Vita 3D renderer trace line to the shared boot-trace log.
     void AppendRenderTrace(const std::string& message) {
+        if (!EnablePsVitaBootTraceLogging) {
+            return;
+        }
+
         std::FILE* file = std::fopen(PsVitaBootTracePath, "a");
         if (file == nullptr) {
             return;
@@ -160,6 +167,59 @@ namespace helengine::psvita {
         GxmRenderer = gxmRenderer;
     }
 
+    /// Renders the directional-light caster depth map before the Vita main frame is opened.
+    void PsVitaRenderManager3D::PrepareShadowMaps() {
+        ActiveShadowLight = nullptr;
+        ActiveLightViewProjection = ::float4x4::get_Identity();
+        ShadowDepthPassActive = false;
+
+        if (GxmRenderer == nullptr || Core::Instance == nullptr || Core::Instance->ObjectManager == nullptr) {
+            return;
+        }
+
+        ::DirectionalLightComponent* directionalLight = ResolveActiveDirectionalLight();
+        if (directionalLight == nullptr) {
+            return;
+        }
+
+        List<::ICamera*>* cameras = Core::Instance->ObjectManager->get_Cameras();
+        if (cameras == nullptr) {
+            return;
+        }
+
+        ::float4x4 lightViewProjection = BuildDirectionalLightViewProjection(directionalLight);
+        bool renderedShadowMap = false;
+        for (int32_t cameraIndex = 0; cameraIndex < cameras->get_Count(); cameraIndex++) {
+            ::ICamera* camera = (*cameras)[cameraIndex];
+            if (camera == nullptr) {
+                continue;
+            }
+
+            ::IRenderQueue3D* renderQueue = camera->get_RenderQueue3D();
+            if (renderQueue == nullptr) {
+                continue;
+            }
+
+            ActiveCamera = camera;
+            ActiveLightViewProjection = lightViewProjection;
+            ShadowDepthPassActive = GxmRenderer->BeginShadowDepthPass();
+            if (!ShadowDepthPassActive) {
+                ActiveCamera = nullptr;
+                throw new InvalidOperationException("PS Vita directional shadow rendering must begin before the main frame.");
+            }
+
+            renderQueue->VisitOrdered(this);
+            GxmRenderer->EndShadowDepthPass();
+            ShadowDepthPassActive = false;
+            ActiveCamera = nullptr;
+            renderedShadowMap = true;
+        }
+
+        if (renderedShadowMap) {
+            ActiveShadowLight = directionalLight;
+        }
+    }
+
     /// Traverses camera-owned 3D queues, submits Lambert-lit mesh geometry, and forwards ordered 2D queues to the Vita 2D renderer.
     void PsVitaRenderManager3D::Draw() {
         if (Core::Instance == nullptr || Core::Instance->ObjectManager == nullptr || Core::Instance->RenderManager2D == nullptr) {
@@ -189,7 +249,6 @@ namespace helengine::psvita {
 
     /// Builds one concrete runtime material from one packaged cooked platform material asset.
     ::RuntimeMaterial* PsVitaRenderManager3D::BuildMaterialFromCooked(std::string cookedAssetPath, IContentStreamSource* contentStreamSource) {
-        (void)contentStreamSource;
         if (cookedAssetPath.empty()) {
             throw new ArgumentException("Cooked material asset path must be provided.", "cookedAssetPath");
         }
@@ -199,7 +258,23 @@ namespace helengine::psvita {
         rendering::PsVitaCompiledShaderMaterial compiledShaderMaterial;
         if (rendering::PsVitaCompiledShaderMaterialReader::TryRead(cookedAssetPath, compiledShaderMaterial)) {
             AppendRenderTrace("RenderManager3D::BuildMaterialFromCooked compiled-shader path=" + cookedAssetPath);
-            return BuildCompiledShaderRuntimeMaterial(compiledShaderMaterial);
+            ::RuntimeMaterial* runtimeMaterial = BuildCompiledShaderRuntimeMaterial(compiledShaderMaterial);
+            if (compiledShaderMaterial.RequiresDiffuseTexture && !compiledShaderMaterial.DiffuseTextureAssetId.empty()) {
+                if (Core::Instance == nullptr || Core::Instance->RenderManager2D == nullptr || contentStreamSource == nullptr) {
+                    throw new InvalidOperationException("Textured PS Vita compiled-shader materials require the runtime texture loader.");
+                }
+                std::size_t cookedRootIndex = cookedAssetPath.find("cooked/");
+                if (cookedRootIndex == std::string::npos) {
+                    throw new InvalidOperationException("Textured PS Vita compiled-shader materials require a cooked asset path.");
+                }
+                std::string cookedTexturePath = cookedAssetPath.substr(0, cookedRootIndex) + "cooked/imported/" + compiledShaderMaterial.DiffuseTextureAssetId;
+                ::RuntimeTexture* runtimeTexture = Core::Instance->RenderManager2D->BuildTextureFromCooked(cookedTexturePath, contentStreamSource);
+                if (runtimeTexture == nullptr) {
+                    throw new InvalidOperationException("Textured PS Vita compiled-shader materials require one runtime diffuse texture.");
+                }
+                runtimeMaterial->SetPrimaryTexture(runtimeTexture);
+            }
+            return runtimeMaterial;
         }
 
         ::FileStream* stream = nullptr;
@@ -215,6 +290,7 @@ namespace helengine::psvita {
                 stream = nullptr;
 
                 ::RuntimeMaterial* runtimeMaterial = BuildMaterialFromCooked(cookedShaderMaterialAsset);
+                AttachDiffuseTexture(runtimeMaterial, cookedShaderMaterialAsset, cookedAssetPath, contentStreamSource);
                 delete cookedShaderMaterialAsset;
                 return runtimeMaterial;
             }
@@ -246,6 +322,22 @@ namespace helengine::psvita {
 
             throw;
         }
+    }
+
+    /// Loads and attaches the packaged diffuse texture referenced by one shader material.
+    void PsVitaRenderManager3D::AttachDiffuseTexture(::RuntimeMaterial* runtimeMaterial, ::ShaderMaterialAsset* materialAsset, const std::string& cookedAssetPath, IContentStreamSource* contentStreamSource) {
+        if (runtimeMaterial == nullptr || materialAsset == nullptr || materialAsset->DiffuseTextureAssetId.empty() || Core::Instance == nullptr || Core::Instance->RenderManager2D == nullptr) {
+            return;
+        }
+
+        std::size_t cookedRootIndex = cookedAssetPath.find("cooked/");
+        if (cookedRootIndex == std::string::npos) {
+            return;
+        }
+
+        std::string cookedTexturePath = cookedAssetPath.substr(0, cookedRootIndex) + "cooked/imported/" + materialAsset->DiffuseTextureAssetId;
+        ::RuntimeTexture* runtimeTexture = Core::Instance->RenderManager2D->BuildTextureFromCooked(cookedTexturePath, contentStreamSource);
+        runtimeMaterial->SetPrimaryTexture(runtimeTexture);
     }
 
     /// Builds one concrete runtime material from one deserialized material asset payload.
@@ -291,7 +383,12 @@ namespace helengine::psvita {
         runtimeMaterial->SetVertexProgramName(materialAsset.VertexProgramName);
         runtimeMaterial->SetPixelProgramName(materialAsset.PixelProgramName);
         runtimeMaterial->SetVariantName(materialAsset.VariantName);
+        runtimeMaterial->SetParameterContractVersion(materialAsset.ParameterContractVersion);
         runtimeMaterial->SetBaseColorAbgr(materialAsset.BaseColorAbgr);
+        runtimeMaterial->SetRequiresDiffuseTexture(materialAsset.RequiresDiffuseTexture);
+        runtimeMaterial->SetDiffuseTextureAssetId(materialAsset.DiffuseTextureAssetId);
+        runtimeMaterial->SetCastsShadows(materialAsset.CastsShadows);
+        runtimeMaterial->SetReceivesShadows(materialAsset.ReceivesShadows);
         return runtimeMaterial;
     }
 
@@ -362,6 +459,14 @@ namespace helengine::psvita {
             }
         }
 
+        std::vector<::float2> copiedTexCoords;
+        if (data->TexCoords != nullptr && data->TexCoords->Length == data->Positions->Length) {
+            copiedTexCoords.reserve(static_cast<std::size_t>(data->TexCoords->Length));
+            for (int32_t texCoordIndex = 0; texCoordIndex < data->TexCoords->Length; ++texCoordIndex) {
+                copiedTexCoords.push_back((*data->TexCoords)[texCoordIndex]);
+            }
+        }
+
         ::ModelAssetIndexData* indexData = ::ModelAssetIndexData::Resolve(data);
         std::vector<std::uint32_t> resolvedIndices;
         resolvedIndices.reserve(static_cast<std::size_t>(std::max(0, indexData->IndexCount)));
@@ -377,6 +482,7 @@ namespace helengine::psvita {
         delete indexData;
 
         auto* runtimeModel = new rendering::PsVitaRuntimeModel(std::move(copiedPositions), std::move(copiedNormals));
+        runtimeModel->SetTexCoords(std::move(copiedTexCoords));
         runtimeModel->SetSubmeshes(BuildRuntimeSubmeshes(data, resolvedIndices));
         return runtimeModel;
     }
@@ -422,12 +528,23 @@ namespace helengine::psvita {
             return;
         }
         ActiveViewProjection = BuildCameraViewProjection(camera, ActiveViewport);
+        QueuedTexturedTriangles.clear();
         renderQueue->VisitOrdered(this);
 
         if (GxmRenderer != nullptr && !QueuedMeshTriangles.empty()) {
             GxmRenderer->SubmitSolidColorTriangles(QueuedMeshTriangles);
             QueuedMeshTriangles.clear();
         }
+
+        std::stable_sort(QueuedTexturedTriangles.begin(), QueuedTexturedTriangles.end(), [](const PsVitaProjectedTexturedTriangle& left, const PsVitaProjectedTexturedTriangle& right) {
+            return left.AverageDepth > right.AverageDepth;
+        });
+        if (GxmRenderer != nullptr) {
+            for (const PsVitaProjectedTexturedTriangle& triangle : QueuedTexturedTriangles) {
+                GxmRenderer->SubmitTexturedTriangle(triangle.Quad);
+            }
+        }
+        QueuedTexturedTriangles.clear();
 
         ActiveCamera = nullptr;
     }
@@ -444,210 +561,34 @@ namespace helengine::psvita {
             return;
         }
         const std::vector<::float3>& normals = runtimeModel->GetNormals();
+        const std::vector<::float2>& texCoords = runtimeModel->GetTexCoords();
 
         ::float4x4 world = BuildWorldTransform(parent);
         ::float4x4 worldViewProjection;
         float4x4::Multiply__ref0_ref1_out2(world, ActiveViewProjection, worldViewProjection);
+        ::float4x4 lightViewProjection;
+        float4x4::Multiply__ref0_ref1_out2(world, ActiveLightViewProjection, lightViewProjection);
 
         Array<rendering::PsVitaRuntimeSubmesh*>* submeshes = runtimeModel->get_Submeshes();
         if (submeshes == nullptr || submeshes->Length == 0) {
             return;
         }
-        if (TryDrawRuntimeModelWithSolidColorPath(worldViewProjection, meshComponent, runtimeModel)) {
+        if (ShadowDepthPassActive) {
+            TryDrawRuntimeModelShadowDepth(lightViewProjection, meshComponent, runtimeModel);
+            return;
+        }
+        if (TryDrawRuntimeModelWithSolidColorPath(worldViewProjection, world, lightViewProjection, meshComponent, runtimeModel)) {
             return;
         }
 
-        ::float3 entityPosition = parent->get_Position();
-        ::float3 entityScale = parent->get_Scale();
-        ::float4 entityOrientation = parent->get_Orientation();
-        ::DirectionalLightComponent* directionalLight = ResolveActiveDirectionalLight();
-        const bool hasDirectionalLight = directionalLight != nullptr;
-        const ::float3 lightDirection = hasDirectionalLight
-            ? ResolveDirectionalLightDirection(directionalLight)
-            : ::float3::get_Zero();
-        const ::float3 directionalLightColor = hasDirectionalLight
-            ? ::float3(
-                directionalLight->get_Color().X * directionalLight->get_Intensity(),
-                directionalLight->get_Color().Y * directionalLight->get_Intensity(),
-                directionalLight->get_Color().Z * directionalLight->get_Intensity())
-            : ::float3::get_Zero();
-        const ::float3 ambientLightColor = ResolveAmbientLightColor();
-
-        std::size_t attemptedTriangleCount = 0u;
-        std::vector<ProjectedTriangle> projectedTriangles;
-        ::float3 firstProjectedVertex0;
-        ::float3 firstProjectedVertex1;
-        ::float3 firstProjectedVertex2;
-        bool hasFirstProjectedTriangle = false;
-        for (int32_t submeshIndex = 0; submeshIndex < submeshes->Length; ++submeshIndex) {
-            rendering::PsVitaRuntimeSubmesh* submesh = (*submeshes)[submeshIndex];
-            if (submesh == nullptr) {
-                continue;
-            }
-
-            const std::vector<std::uint32_t>& triangleIndices = submesh->GetTriangleIndices();
-            const std::uint32_t baseColorAbgr = ResolveLambertBaseColor(meshComponent, submeshIndex);
-            const ::MaterialCullMode cullMode = ResolveSubmeshCullMode(meshComponent, submeshIndex);
-            for (std::size_t index = 0; index + 2 < triangleIndices.size(); index += 3) {
-                attemptedTriangleCount++;
-                const std::uint32_t triangleIndex0 = triangleIndices[index];
-                const std::uint32_t triangleIndex1 = triangleIndices[index + 1];
-                const std::uint32_t triangleIndex2 = triangleIndices[index + 2];
-                if (triangleIndex0 >= positions.size() || triangleIndex1 >= positions.size() || triangleIndex2 >= positions.size()) {
-                    continue;
-                }
-
-                const ::float3 localPosition0 = positions[triangleIndex0];
-                const ::float3 localPosition1 = positions[triangleIndex1];
-                const ::float3 localPosition2 = positions[triangleIndex2];
-                const ::float3 worldPosition0 = entityPosition + float4::RotateVector(localPosition0 * entityScale, entityOrientation);
-                const ::float3 worldPosition1 = entityPosition + float4::RotateVector(localPosition1 * entityScale, entityOrientation);
-                const ::float3 worldPosition2 = entityPosition + float4::RotateVector(localPosition2 * entityScale, entityOrientation);
-
-                ::float3 worldNormal0;
-                ::float3 worldNormal1;
-                ::float3 worldNormal2;
-                if (normals.size() == positions.size()) {
-                    worldNormal0 = float3::Normalize(float4::RotateVector(normals[triangleIndex0], entityOrientation));
-                    worldNormal1 = float3::Normalize(float4::RotateVector(normals[triangleIndex1], entityOrientation));
-                    worldNormal2 = float3::Normalize(float4::RotateVector(normals[triangleIndex2], entityOrientation));
-                } else {
-                    ::float3 edge01 = worldPosition1 - worldPosition0;
-                    ::float3 edge02 = worldPosition2 - worldPosition0;
-                    ::float3 faceNormal = float3::Cross(edge01, edge02);
-                    if (faceNormal.LengthSquared() <= 0.000001f) {
-                        faceNormal = ::float3::get_UnitZ();
-                    } else {
-                        faceNormal = float3::Normalize(faceNormal);
-                    }
-
-                    worldNormal0 = faceNormal;
-                    worldNormal1 = faceNormal;
-                    worldNormal2 = faceNormal;
-                }
-
-                ::float3 projectedVertex0;
-                ::float3 projectedVertex1;
-                ::float3 projectedVertex2;
-                if (!TryProjectToScreen(localPosition0, worldViewProjection, ActiveViewport, projectedVertex0)
-                    || !TryProjectToScreen(localPosition1, worldViewProjection, ActiveViewport, projectedVertex1)
-                    || !TryProjectToScreen(localPosition2, worldViewProjection, ActiveViewport, projectedVertex2)) {
-                    continue;
-                }
-                if (ShouldCullProjectedTriangle(cullMode, projectedVertex0, projectedVertex1, projectedVertex2)) {
-                    continue;
-                }
-
-                if (!hasFirstProjectedTriangle) {
-                    firstProjectedVertex0 = projectedVertex0;
-                    firstProjectedVertex1 = projectedVertex1;
-                    firstProjectedVertex2 = projectedVertex2;
-                    hasFirstProjectedTriangle = true;
-                }
-
-                projectedTriangles.push_back(ProjectedTriangle {
-                    rendering::PsVitaSolidColorVertex {
-                        projectedVertex0.X,
-                        projectedVertex0.Y,
-                        BuildLambertVertexColor(baseColorAbgr, worldNormal0, lightDirection, directionalLightColor, ambientLightColor, hasDirectionalLight),
-                        0u
-                    },
-                    rendering::PsVitaSolidColorVertex {
-                        projectedVertex1.X,
-                        projectedVertex1.Y,
-                        BuildLambertVertexColor(baseColorAbgr, worldNormal1, lightDirection, directionalLightColor, ambientLightColor, hasDirectionalLight),
-                        0u
-                    },
-                    rendering::PsVitaSolidColorVertex {
-                        projectedVertex2.X,
-                        projectedVertex2.Y,
-                        BuildLambertVertexColor(baseColorAbgr, worldNormal2, lightDirection, directionalLightColor, ambientLightColor, hasDirectionalLight),
-                        0u
-                    },
-                    (projectedVertex0.Z + projectedVertex1.Z + projectedVertex2.Z) / 3.0f
-                });
-            }
-        }
-
-        if (PsVitaLoggedMeshDiagnosticsCount < 2u) {
-            std::FILE* file = std::fopen(PsVitaBootTracePath, "a");
-            if (file != nullptr) {
-                ::float3 meshCenter = meshComponent->get_Parent()->get_Position();
-                ::float3 cameraPosition;
-                ::float4 cameraOrientation;
-                ::float3 negativeZForward;
-                ::float3 positiveZForward;
-                float negativeZAlignment = 0.0f;
-                float positiveZAlignment = 0.0f;
-                if (ActiveCamera != nullptr && ActiveCamera->get_Parent() != nullptr) {
-                    cameraPosition = ActiveCamera->get_Parent()->get_Position();
-                    cameraOrientation = ActiveCamera->get_Parent()->get_Orientation();
-                    negativeZForward = float4::RotateVector(::float3(0.0f, 0.0f, -1.0f), cameraOrientation);
-                    positiveZForward = float4::RotateVector(::float3(0.0f, 0.0f, 1.0f), cameraOrientation);
-                    ::float3 toMesh = float3::Normalize(meshCenter - cameraPosition);
-                    negativeZAlignment = float3::Dot(negativeZForward, toMesh);
-                    positiveZAlignment = float3::Dot(positiveZForward, toMesh);
-                }
-                ::float3 projectedOrigin;
-                const bool projectedOriginVisible = TryProjectToScreen(::float3(0.0f, 0.0f, 0.0f), worldViewProjection, ActiveViewport, projectedOrigin);
-
-                char buffer[512];
-                std::snprintf(
-                    buffer,
-                    sizeof(buffer),
-                    "Render3DProjection: meshIndex=%u viewport=(%.2f,%.2f,%.2f,%.2f) meshCenter=(%.2f,%.2f,%.2f) camera=(%.2f,%.2f,%.2f) alignNegZ=%.4f alignPosZ=%.4f originVisible=%u originScreen=(%.2f,%.2f,%.4f) attempted=%u projected=%u queuedVertices=%u firstTriangle=(%.2f,%.2f,%.4f)|(%.2f,%.2f,%.4f)|(%.2f,%.2f,%.4f)",
-                    PsVitaLoggedMeshDiagnosticsCount,
-                    ActiveViewport.X,
-                    ActiveViewport.Y,
-                    ActiveViewport.Z,
-                    ActiveViewport.W,
-                    meshCenter.X,
-                    meshCenter.Y,
-                    meshCenter.Z,
-                    cameraPosition.X,
-                    cameraPosition.Y,
-                    cameraPosition.Z,
-                    negativeZAlignment,
-                    positiveZAlignment,
-                    projectedOriginVisible ? 1u : 0u,
-                    projectedOriginVisible ? projectedOrigin.X : -1.0f,
-                    projectedOriginVisible ? projectedOrigin.Y : -1.0f,
-                    projectedOriginVisible ? projectedOrigin.Z : -1.0f,
-                    static_cast<unsigned int>(attemptedTriangleCount),
-                    static_cast<unsigned int>(projectedTriangles.size()),
-                    static_cast<unsigned int>(projectedTriangles.size() * 3u),
-                    hasFirstProjectedTriangle ? firstProjectedVertex0.X : -1.0f,
-                    hasFirstProjectedTriangle ? firstProjectedVertex0.Y : -1.0f,
-                    hasFirstProjectedTriangle ? firstProjectedVertex0.Z : -1.0f,
-                    hasFirstProjectedTriangle ? firstProjectedVertex1.X : -1.0f,
-                    hasFirstProjectedTriangle ? firstProjectedVertex1.Y : -1.0f,
-                    hasFirstProjectedTriangle ? firstProjectedVertex1.Z : -1.0f,
-                    hasFirstProjectedTriangle ? firstProjectedVertex2.X : -1.0f,
-                    hasFirstProjectedTriangle ? firstProjectedVertex2.Y : -1.0f,
-                    hasFirstProjectedTriangle ? firstProjectedVertex2.Z : -1.0f);
-                std::fputs(buffer, file);
-                std::fputc('\n', file);
-                std::fclose(file);
-            }
-
-            PsVitaLoggedProjectionDiagnostics = true;
-            PsVitaLoggedMeshDiagnosticsCount++;
-        }
-
-        std::stable_sort(projectedTriangles.begin(), projectedTriangles.end(), [](const ProjectedTriangle& left, const ProjectedTriangle& right) {
-            return left.AverageDepth > right.AverageDepth;
-        });
-
-        for (const ProjectedTriangle& triangle : projectedTriangles) {
-            QueuedMeshTriangles.push_back(triangle.Vertex0);
-            QueuedMeshTriangles.push_back(triangle.Vertex1);
-            QueuedMeshTriangles.push_back(triangle.Vertex2);
-        }
+        throw new InvalidOperationException("PS Vita 3D meshes require the artifact-backed Forward Standard GXM path.");
     }
 
     /// Attempts to draw one runtime model through the programmable solid-color GXM mesh path.
     bool PsVitaRenderManager3D::TryDrawRuntimeModelWithSolidColorPath(
         const ::float4x4& worldViewProjection,
+        const ::float4x4& normalTransform,
+        const ::float4x4& lightViewProjection,
         ::MeshComponent* meshComponent,
         rendering::PsVitaRuntimeModel* runtimeModel) {
         if (GxmRenderer == nullptr || meshComponent == nullptr || runtimeModel == nullptr) {
@@ -655,7 +596,9 @@ namespace helengine::psvita {
         }
 
         const std::vector<::float3>& positions = runtimeModel->GetPositions();
-        if (positions.empty()) {
+        const std::vector<::float3>& normals = runtimeModel->GetNormals();
+        const std::vector<::float2>& texCoords = runtimeModel->GetTexCoords();
+        if (positions.empty() || normals.size() != positions.size()) {
             return false;
         }
 
@@ -676,17 +619,105 @@ namespace helengine::psvita {
                 continue;
             }
 
+            ::RuntimeMaterial* material = ResolveSubmeshMaterial(meshComponent, submeshIndex);
+            rendering::PsVitaCompiledShaderRuntimeMaterial* compiledMaterial = dynamic_cast<rendering::PsVitaCompiledShaderRuntimeMaterial*>(material);
+            if (compiledMaterial == nullptr) {
+                return false;
+            }
+            if (compiledMaterial->GetParameterContractVersion() != PsVitaForwardMeshParameterContractVersion) {
+                return false;
+            }
+            if (texCoords.size() != positions.size()) {
+                throw new InvalidOperationException("PS Vita Forward Standard materials require UV coordinates for every model vertex.");
+            }
+
             std::uint32_t baseColorAbgr = ResolveSolidColorSubmeshColor(meshComponent, submeshIndex);
-            if (!GxmRenderer->DrawSolidColorMesh(
+            ::DirectionalLightComponent* directionalLight = ActiveShadowLight != nullptr ? ActiveShadowLight : ResolveActiveDirectionalLight();
+            const ::float3 lightDirection = directionalLight == nullptr
+                ? ::float3::get_Zero()
+                : ResolveDirectionalLightDirection(directionalLight);
+            const ::float3 lightColor = directionalLight == nullptr
+                ? ::float3::get_Zero()
+                : ::float3(
+                    directionalLight->get_Color().X * directionalLight->get_Intensity(),
+                    directionalLight->get_Color().Y * directionalLight->get_Intensity(),
+                    directionalLight->get_Color().Z * directionalLight->get_Intensity());
+            rendering::PsVitaRuntimeTexture* diffuseTexture = nullptr;
+            if (material->ResolvePrimaryTexture() != nullptr) {
+                diffuseTexture = dynamic_cast<rendering::PsVitaRuntimeTexture*>(material->ResolvePrimaryTexture());
+                if (diffuseTexture == nullptr) {
+                    throw new InvalidOperationException("PS Vita Forward Standard materials require PS Vita runtime diffuse textures.");
+                }
+            }
+            if (!GxmRenderer->DrawForwardStandardMesh(
                 worldViewProjection,
+                normalTransform,
+                lightViewProjection,
+                positions.data(),
+                normals.data(),
+                texCoords.data(),
+                static_cast<int32_t>(positions.size()),
+                triangleIndices.data(),
+                static_cast<int32_t>(triangleIndices.size()),
+                baseColorAbgr,
+                compiledMaterial->GetShaderAssetId(),
+                compiledMaterial->GetVertexProgramName(),
+                compiledMaterial->GetPixelProgramName(),
+                ActiveShadowLight != nullptr && compiledMaterial->GetReceivesShadows()
+                    ? "ForwardStandardShadowed"
+                    : compiledMaterial->GetVariantName(),
+                lightDirection,
+                lightColor,
+                ResolveAmbientLightColor(),
+                diffuseTexture)) {
+                return false;
+            }
+
+            drewAnySubmesh = true;
+        }
+
+        return drewAnySubmesh;
+    }
+
+    /// Draws one runtime model into the active directional shadow depth target when its material permits shadow casting.
+    bool PsVitaRenderManager3D::TryDrawRuntimeModelShadowDepth(
+        const ::float4x4& lightViewProjection,
+        ::MeshComponent* meshComponent,
+        rendering::PsVitaRuntimeModel* runtimeModel) {
+        if (GxmRenderer == nullptr || meshComponent == nullptr || runtimeModel == nullptr) {
+            return false;
+        }
+
+        const std::vector<::float3>& positions = runtimeModel->GetPositions();
+        Array<rendering::PsVitaRuntimeSubmesh*>* submeshes = runtimeModel->get_Submeshes();
+        if (positions.empty() || submeshes == nullptr) {
+            return false;
+        }
+
+        bool drewAnySubmesh = false;
+        for (int32_t submeshIndex = 0; submeshIndex < submeshes->Length; ++submeshIndex) {
+            rendering::PsVitaRuntimeSubmesh* submesh = (*submeshes)[submeshIndex];
+            ::RuntimeMaterial* material = ResolveSubmeshMaterial(meshComponent, submeshIndex);
+            rendering::PsVitaCompiledShaderRuntimeMaterial* compiledMaterial = dynamic_cast<rendering::PsVitaCompiledShaderRuntimeMaterial*>(material);
+            if (submesh == nullptr || compiledMaterial == nullptr || !compiledMaterial->GetCastsShadows()) {
+                continue;
+            }
+
+            const std::vector<std::uint32_t>& triangleIndices = submesh->GetTriangleIndices();
+            if (triangleIndices.empty()) {
+                continue;
+            }
+            if (!GxmRenderer->DrawShadowDepthMesh(
+                lightViewProjection,
                 positions.data(),
                 static_cast<int32_t>(positions.size()),
                 triangleIndices.data(),
                 static_cast<int32_t>(triangleIndices.size()),
-                baseColorAbgr)) {
+                compiledMaterial->GetShaderAssetId(),
+                compiledMaterial->GetVertexProgramName(),
+                compiledMaterial->GetPixelProgramName())) {
                 return false;
             }
-
             drewAnySubmesh = true;
         }
 
@@ -723,6 +754,23 @@ namespace helengine::psvita {
         }
 
         return float3::Normalize(float4::RotateVector(::float3(0.0f, 0.0f, -1.0f), lightComponent->get_Parent()->get_Orientation()));
+    }
+
+    /// Builds the fixed first-tier directional-light view-projection matrix used by the Vita shadow map.
+    ::float4x4 PsVitaRenderManager3D::BuildDirectionalLightViewProjection(::DirectionalLightComponent* lightComponent) {
+        ::float3 lightDirection = ResolveDirectionalLightDirection(lightComponent);
+        ::float3 lightPosition = lightDirection * -20.0f;
+        ::float3 lightTarget = ::float3::get_Zero();
+        ::float3 lightUp = std::abs(lightDirection.Y) > 0.9f
+            ? ::float3(0.0f, 0.0f, 1.0f)
+            : ::float3(0.0f, 1.0f, 0.0f);
+        ::float4x4 lightView;
+        float4x4::CreateLookAt__ref0_ref1_ref2_out3(lightPosition, lightTarget, lightUp, lightView);
+        ::float4x4 lightProjection;
+        float4x4::CreateOrthographicOffCenter__out6(-20.0f, 20.0f, -20.0f, 20.0f, 0.1f, 80.0f, lightProjection);
+        ::float4x4 lightViewProjection;
+        float4x4::Multiply__ref0_ref1_out2(lightView, lightProjection, lightViewProjection);
+        return lightViewProjection;
     }
 
     /// Resolves the accumulated ambient light color from the runtime object manager.

@@ -118,7 +118,7 @@ if ($RunningVita3KProcesses.Count -gt 0) {
 
 $DeletedInstalledTitle = $false
 $InstalledFromVpk = $false
-# Unless -KeepInstalledTitle is passed, refresh the default installed title before launching the installed app.
+# Unless -KeepInstalledTitle is passed, refresh the default installed title before opening the VPK once.
 if (-not $KeepInstalledTitle) {
     $DeleteOutput = & $Vita3KPath -d $InstalledTitleId 2>&1
     $DeleteOutputText = ($DeleteOutput | Out-String).Trim()
@@ -146,12 +146,11 @@ if ($ShouldInstallFromVpk) {
         throw "Installed title '$InstalledTitleId' was not materialized after opening '$ResolvedVpkPath'."
     }
 
-    if (-not $InstallProcess.HasExited) {
-        Stop-Process -Id $InstallProcess.Id -Force
-    }
 }
 
-Start-Process -FilePath $Vita3KPath -ArgumentList @('-r', $InstalledTitleId, '-S', 'eboot.bin') -WindowStyle Normal
+if (-not $InstalledFromVpk) {
+    Start-Process -FilePath $Vita3KPath -ArgumentList @('-r', $InstalledTitleId, '-S', 'eboot.bin') -WindowStyle Normal
+}
 
 Write-Output "Launched Vita3K: $Vita3KPath"
 Write-Output "VPK: $ResolvedVpkPath"

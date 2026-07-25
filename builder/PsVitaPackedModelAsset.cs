@@ -10,6 +10,16 @@ public sealed class PsVitaPackedModelAsset {
     public float3[] Positions { get; set; } = [];
 
     /// <summary>
+    /// Gets or sets the model-space normals aligned with positions and required by the Forward Lambert vertex stream.
+    /// </summary>
+    public float3[] Normals { get; set; } = [];
+
+    /// <summary>
+    /// Gets or sets the model-space texture coordinates aligned with the packed positions.
+    /// </summary>
+    public float2[] TexCoords { get; set; } = [];
+
+    /// <summary>
     /// Gets or sets the authored minimum bounds preserved for runtime framing and culling logic.
     /// </summary>
     public float3 BoundsMin { get; set; }

@@ -35,8 +35,10 @@ if(DEFINED HELENGINE_CORE_CPP_ROOT AND NOT HELENGINE_CORE_CPP_ROOT STREQUAL "")
         set(HELENGINE_CORE_TRANSLATION_UNIT "${HELENGINE_CORE_CPP_ROOT}/helengine_core_unity.cpp")
     elseif(EXISTS "${HELENGINE_CORE_CPP_ROOT}/helengine_core_amalgamated.cpp")
         set(HELENGINE_CORE_TRANSLATION_UNIT "${HELENGINE_CORE_CPP_ROOT}/helengine_core_amalgamated.cpp")
+    elseif(EXISTS "${HELENGINE_CORE_CPP_ROOT}/generated_unity.cpp")
+        set(HELENGINE_CORE_TRANSLATION_UNIT "${HELENGINE_CORE_CPP_ROOT}/generated_unity.cpp")
     else()
-        message(FATAL_ERROR "HELENGINE_CORE_CPP_ROOT does not contain helengine_core_unity.cpp or helengine_core_amalgamated.cpp. Regenerate helengine.core C++ output first.")
+        message(FATAL_ERROR "HELENGINE_CORE_CPP_ROOT does not contain a supported generated C++ translation unit. Regenerate helengine.core C++ output first.")
     endif()
 
     list(APPEND HELENGINE_PSVITA_SOURCES "${HELENGINE_CORE_TRANSLATION_UNIT}")
@@ -59,9 +61,20 @@ if(DEFINED HELENGINE_CORE_CPP_ROOT AND NOT HELENGINE_CORE_CPP_ROOT STREQUAL "")
         src/platform/psvita/PsVitaRuntimeDiagnosticsProvider.cpp
         src/platform/psvita/PsVitaRuntimeSceneCatalogFactory.cpp
         src/platform/psvita/rendering/PsVitaGpuTexture.cpp
+        src/platform/psvita/shaders/PsVitaShaderArtifactWriter.cpp
+          src/platform/psvita/shaders/PsVitaShaderArtifactReader.cpp
+          src/platform/psvita/shaders/PsVitaShaderBundleReader.cpp
+        src/platform/psvita/shaders/PsVitaShaderArtifactExportCommand.cpp
+        src/platform/psvita/shaders/PsVitaShaderArtifactHash.cpp
+        src/platform/psvita/shaders/ForwardLambertShaderSource.cpp
         src/platform/psvita/rendering/PsVitaCompiledShaderMaterialReader.cpp
         src/platform/psvita/rendering/PsVitaCompiledShaderRuntimeMaterial.cpp
         src/platform/psvita/rendering/PsVitaGxmRenderer.cpp
+        src/platform/psvita/rendering/PsVitaGxmForwardLambertProgram.cpp
+        src/platform/psvita/rendering/PsVitaGxmShadowDepthProgram.cpp
+        src/platform/psvita/rendering/PsVitaGxmShadowMap.cpp
+        src/platform/psvita/rendering/PsVitaGxmShadowSubmissionMemory.cpp
+        src/platform/psvita/rendering/PsVitaForwardLambertUniformBinder.cpp
         src/platform/psvita/rendering/PsVitaGxmSolidColorProgram.cpp
         src/platform/psvita/rendering/PsVitaMaterialColorDecoder.cpp
         src/platform/psvita/rendering/PsVitaPackedModelReader.cpp
@@ -111,7 +124,11 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     SceCtrl_stub
     SceDisplay_stub
     SceGxm_stub
+    SceIofilemgr_stub
     SceLibKernel_stub
+    SceKernelModulemgr_stub
+    SceShaccCgExt
+    taihen_stub
     ScePgf_stub
     ScePvf_stub
     SceShaccCg_stub
@@ -123,5 +140,6 @@ vita_create_self(${PROJECT_NAME}.self ${PROJECT_NAME})
 vita_create_vpk(${PROJECT_NAME}.vpk ${VITA_TITLEID} ${PROJECT_NAME}.self
     VERSION ${VITA_VERSION}
     NAME ${VITA_APP_NAME}
+    FILE "${CMAKE_CURRENT_SOURCE_DIR}/sce_sys/icon0-indexed.png" "sce_sys/icon0.png"
     ${HELENGINE_PSVITA_VPK_FILE_ARGS}
 )

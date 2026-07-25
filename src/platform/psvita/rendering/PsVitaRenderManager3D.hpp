@@ -26,6 +26,7 @@ class Array;
 #include "float4.hpp"
 #include "float4x4.hpp"
 #include "platform/psvita/rendering/PsVitaSolidColorVertex.hpp"
+#include "platform/psvita/rendering/PsVitaQueuedQuad.hpp"
 
 namespace helengine::psvita::rendering {
     struct PsVitaCompiledShaderMaterial;
@@ -36,6 +37,15 @@ namespace helengine::psvita::rendering {
 }
 
 namespace helengine::psvita {
+    /// Stores one projected textured triangle and its camera-relative depth for painter-order submission.
+    struct PsVitaProjectedTexturedTriangle final {
+        /// Stores the projected textured triangle as one degenerate quad submission.
+        rendering::PsVitaQueuedQuad Quad;
+
+        /// Stores the average projected depth used to draw farther triangles first.
+        float AverageDepth;
+    };
+
     /// Provides the first PS Vita native 3D mesh bridge so runtime models can render through the emulator-safe Lambert fallback path.
     class PsVitaRenderManager3D final : public ::RenderManager3D, public ::IRenderVisitor3D {
     public:
@@ -44,6 +54,9 @@ namespace helengine::psvita {
 
         /// Assigns the native PS Vita GXM renderer that will receive projected Lambert-lit triangle batches.
         void SetGxmRenderer(rendering::PsVitaGxmRenderer* gxmRenderer);
+
+        /// Renders the directional-light caster depth map before the Vita main frame is opened.
+        void PrepareShadowMaps();
 
         /// Traverses camera-owned 3D queues, submits Lambert-lit mesh geometry, and forwards ordered 2D queues to the Vita 2D renderer.
         void Draw() override;
@@ -76,6 +89,14 @@ namespace helengine::psvita {
         /// Attempts to draw one runtime model through the programmable solid-color GXM mesh path.
         bool TryDrawRuntimeModelWithSolidColorPath(
             const ::float4x4& worldViewProjection,
+            const ::float4x4& normalTransform,
+            const ::float4x4& lightViewProjection,
+            ::MeshComponent* meshComponent,
+            rendering::PsVitaRuntimeModel* runtimeModel);
+
+        /// Draws one runtime model into the active directional shadow depth target when its material permits shadow casting.
+        bool TryDrawRuntimeModelShadowDepth(
+            const ::float4x4& lightViewProjection,
             ::MeshComponent* meshComponent,
             rendering::PsVitaRuntimeModel* runtimeModel);
 
@@ -84,6 +105,9 @@ namespace helengine::psvita {
 
         /// Resolves one normalized world-space light direction from the supplied runtime directional light.
         static ::float3 ResolveDirectionalLightDirection(::DirectionalLightComponent* lightComponent);
+
+        /// Builds the fixed first-tier directional-light view-projection matrix used by the Vita shadow map.
+        static ::float4x4 BuildDirectionalLightViewProjection(::DirectionalLightComponent* lightComponent);
 
         /// Resolves the accumulated ambient light color from the runtime object manager.
         static ::float3 ResolveAmbientLightColor();
@@ -113,6 +137,9 @@ namespace helengine::psvita {
         /// Builds one Vita-specific runtime material from one cooked compiled-shader material payload.
         static ::RuntimeMaterial* BuildCompiledShaderRuntimeMaterial(const rendering::PsVitaCompiledShaderMaterial& materialAsset);
 
+        /// Loads and attaches the packaged diffuse texture referenced by one shader material.
+        static void AttachDiffuseTexture(::RuntimeMaterial* runtimeMaterial, ::ShaderMaterialAsset* materialAsset, const std::string& cookedAssetPath, IContentStreamSource* contentStreamSource);
+
         /// Resolves the runtime material that should drive one runtime submesh draw.
         static ::RuntimeMaterial* ResolveSubmeshMaterial(::MeshComponent* meshComponent, int32_t submeshIndex);
 
@@ -141,6 +168,9 @@ namespace helengine::psvita {
         /// Stores the native PS Vita GXM renderer that receives projected Lambert-lit triangle batches.
         rendering::PsVitaGxmRenderer* GxmRenderer = nullptr;
 
+        /// Stores all projected textured triangles for the active camera before depth-ordered submission.
+        std::vector<PsVitaProjectedTexturedTriangle> QueuedTexturedTriangles;
+
         /// Stores the active camera while the ordered 3D queue is being visited.
         ::ICamera* ActiveCamera = nullptr;
 
@@ -149,6 +179,15 @@ namespace helengine::psvita {
 
         /// Stores the active camera view-projection matrix for the current 3D queue traversal.
         ::float4x4 ActiveViewProjection;
+
+        /// Stores the selected directional light for the active camera shadow frame, or null when shadows are unavailable.
+        ::DirectionalLightComponent* ActiveShadowLight = nullptr;
+
+        /// Stores the active camera-independent directional shadow transform.
+        ::float4x4 ActiveLightViewProjection;
+
+        /// Stores whether the current queue traversal is populating the directional shadow depth target.
+        bool ShadowDepthPassActive = false;
 
         /// Stores the projected Lambert-lit mesh triangles waiting for GPU submission.
         std::vector<rendering::PsVitaSolidColorVertex> QueuedMeshTriangles;
