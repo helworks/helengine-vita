@@ -6,35 +6,28 @@
 #include <cstdint>
 
 #include <psp2/ctrl.h>
-#include <psp2/touch.h>
 
-#include "ButtonState.hpp"
 #include "InputGamepadButton.hpp"
 
 namespace helengine::psvita {
     namespace {
-        constexpr int FrontTouchWidth = 1920;
-        constexpr int FrontTouchHeight = 1088;
-        constexpr int RuntimeWidth = 960;
-        constexpr int RuntimeHeight = 544;
     }
 
     /// Creates the backend and allocates the persistent gamepad storage reused every frame.
     PsVitaInputBackend::PsVitaInputBackend()
-        : CachedMouseState(0, 0, 0, ButtonState::Released, ButtonState::Released, ButtonState::Released, ButtonState::Released, ButtonState::Released) {
+        : ActiveGamepadBufferIndex(0) {
         sceCtrlSetSamplingMode(SCE_CTRL_MODE_ANALOG_WIDE);
-        sceTouchSetSamplingState(SCE_TOUCH_PORT_FRONT, SCE_TOUCH_SAMPLING_STATE_START);
 
-        PersistentGamepads = new Array<InputGamepadState>(1);
-        CachedFrame.set_Gamepads(PersistentGamepads);
-        CachedFrame.set_GamepadCount(1);
-        CachedFrame.set_Mouse(CachedMouseState);
+        GamepadBuffers[0] = new Array<InputGamepadState>(1);
+        GamepadBuffers[1] = new Array<InputGamepadState>(1);
     }
 
     /// Releases the persistent gamepad storage owned by the backend.
     PsVitaInputBackend::~PsVitaInputBackend() {
-        delete PersistentGamepads;
-        PersistentGamepads = nullptr;
+        delete GamepadBuffers[0];
+        delete GamepadBuffers[1];
+        GamepadBuffers[0] = nullptr;
+        GamepadBuffers[1] = nullptr;
     }
 
     /// Returns whether the temporary Vita backend receives input while the app is in the background.
@@ -55,21 +48,10 @@ namespace helengine::psvita {
         return static_cast<short>(scaled);
     }
 
-    /// Converts one raw front-touch X coordinate into runtime window-space coordinates.
-    int PsVitaInputBackend::ConvertFrontTouchX(int rawX) {
-        int scaled = (rawX * RuntimeWidth) / FrontTouchWidth;
-        return std::clamp(scaled, 0, RuntimeWidth - 1);
-    }
-
-    /// Converts one raw front-touch Y coordinate into runtime window-space coordinates.
-    int PsVitaInputBackend::ConvertFrontTouchY(int rawY) {
-        int scaled = (rawY * RuntimeHeight) / FrontTouchHeight;
-        return std::clamp(scaled, 0, RuntimeHeight - 1);
-    }
-
     /// Updates the persistent shared gamepad slot from the current Vita controller state.
     void PsVitaInputBackend::UpdateGamepadState() {
-        if (PersistentGamepads == nullptr) {
+        Array<InputGamepadState>* gamepads = GamepadBuffers[ActiveGamepadBufferIndex];
+        if (gamepads == nullptr) {
             return;
         }
 
@@ -99,45 +81,18 @@ namespace helengine::psvita {
 
         gamepadState.set_LeftTrigger(0);
         gamepadState.set_RightTrigger(0);
-        (*PersistentGamepads)[0] = gamepadState;
+        (*gamepads)[0] = gamepadState;
     }
 
-    /// Updates the cached mouse state from the current front-touch state so the shared pointer pipeline can consume it.
-    void PsVitaInputBackend::UpdateFrontTouchMouseState() {
-        SceTouchData touchData {};
-        int touchReadCount = sceTouchPeek(SCE_TOUCH_PORT_FRONT, &touchData, 1);
-        bool isTouchActive = touchReadCount > 0 && touchData.reportNum > 0;
-
-        int pointerX = PreviousTouchX;
-        int pointerY = PreviousTouchY;
-        ButtonState leftButtonState = ButtonState::Released;
-        if (isTouchActive) {
-            pointerX = ConvertFrontTouchX(touchData.report[0].x);
-            pointerY = ConvertFrontTouchY(touchData.report[0].y);
-            leftButtonState = ButtonState::Pressed;
-        }
-
-        CachedMouseState = MouseState(
-            pointerX,
-            pointerY,
-            0,
-            leftButtonState,
-            ButtonState::Released,
-            ButtonState::Released,
-            ButtonState::Released,
-            ButtonState::Released);
-        PreviousTouchX = pointerX;
-        PreviousTouchY = pointerY;
-        CachedFrame.set_Mouse(CachedMouseState);
-    }
-
-    /// Captures the next runtime input frame using the persistent controller and front-touch storage.
+    /// Captures the next runtime input frame using the persistent controller storage.
     ::InputFrameState PsVitaInputBackend::CaptureFrame() {
         UpdateGamepadState();
-        UpdateFrontTouchMouseState();
-        CachedFrame.set_GamepadCount(1);
-        CachedFrame.set_Gamepads(PersistentGamepads);
-        return CachedFrame;
+        Array<InputGamepadState>* gamepads = GamepadBuffers[ActiveGamepadBufferIndex];
+        ::InputFrameState frameState;
+        frameState.set_GamepadCount(1);
+        frameState.set_Gamepads(gamepads);
+        ActiveGamepadBufferIndex = (ActiveGamepadBufferIndex + 1) % 2;
+        return frameState;
     }
 }
 
