@@ -10,27 +10,27 @@
 
 namespace helengine::psvita::rendering {
     /// <summary>
-    /// Owns the runtime-compiled PS Vita solid-color shader objects that the first programmable mesh path binds directly.
+    /// Owns the artifact-backed PS Vita solid-color shader objects that the first programmable mesh path binds directly.
     /// </summary>
     class PsVitaGxmSolidColorProgram final {
     public:
         /// <summary>
-        /// Creates one empty runtime-program wrapper that will compile and patch its shader state during renderer initialization.
+        /// Creates one empty program wrapper that will load and patch its shader state during renderer initialization.
         /// </summary>
         PsVitaGxmSolidColorProgram();
 
         /// <summary>
-        /// Compiles, patches, and binds the PS Vita solid-color shader programs needed by runtime mesh draws.
+        /// Loads, patches, and binds the PS Vita solid-color shader programs needed by runtime mesh draws.
         /// </summary>
         bool Initialize();
 
         /// <summary>
-        /// Releases the compiled shader programs, patcher allocations, and resolved uniform bindings owned by this runtime-program wrapper.
+        /// Releases the loaded shader programs, patcher allocations, and resolved uniform bindings owned by this program wrapper.
         /// </summary>
         void Reset();
 
         /// <summary>
-        /// Gets whether the runtime-compiled GXM context, shader programs, and uniform bindings are all available.
+        /// Gets whether the artifact-backed GXM context, shader programs, and uniform bindings are all available.
         /// </summary>
         bool IsReady() const;
 
@@ -40,22 +40,22 @@ namespace helengine::psvita::rendering {
         SceGxmContext* GetContext() const;
 
         /// <summary>
-        /// Gets the runtime-compiled solid-color vertex program.
+        /// Gets the artifact-backed solid-color vertex program.
         /// </summary>
         SceGxmVertexProgram* GetVertexProgram() const;
 
         /// <summary>
-        /// Gets the runtime-compiled solid-color fragment program.
+        /// Gets the artifact-backed solid-color fragment program.
         /// </summary>
         SceGxmFragmentProgram* GetFragmentProgram() const;
 
         /// <summary>
-        /// Gets the world-view-projection uniform parameter used by the runtime-compiled solid-color vertex program.
+        /// Gets the world-view-projection uniform parameter used by the artifact-backed solid-color vertex program.
         /// </summary>
         const SceGxmProgramParameter* GetWorldViewProjectionParameter() const;
 
         /// <summary>
-        /// Gets the base-color uniform parameter used by the runtime-compiled solid-color fragment program.
+        /// Gets the base-color uniform parameter used by the artifact-backed solid-color fragment program.
         /// </summary>
         const SceGxmProgramParameter* GetBaseColorParameter() const;
 
@@ -66,42 +66,42 @@ namespace helengine::psvita::rendering {
         SceGxmContext* Context;
 
         /// <summary>
-        /// Stores the shader patcher that owns the runtime-compiled solid-color programs.
+        /// Stores the shader patcher that owns the artifact-backed solid-color programs.
         /// </summary>
         SceGxmShaderPatcher* ShaderPatcher;
 
         /// <summary>
-        /// Stores the patcher registration handle for the runtime-compiled solid-color vertex program header.
+        /// Stores the patcher registration handle for the artifact-backed solid-color vertex program header.
         /// </summary>
         SceGxmShaderPatcherId VertexProgramId;
 
         /// <summary>
-        /// Stores the patcher registration handle for the runtime-compiled solid-color fragment program header.
+        /// Stores the patcher registration handle for the artifact-backed solid-color fragment program header.
         /// </summary>
         SceGxmShaderPatcherId FragmentProgramId;
 
         /// <summary>
-        /// Stores the runtime-compiled solid-color vertex program.
+        /// Stores the artifact-backed solid-color vertex program.
         /// </summary>
         SceGxmVertexProgram* VertexProgram;
 
         /// <summary>
-        /// Stores the runtime-compiled solid-color fragment program.
+        /// Stores the artifact-backed solid-color fragment program.
         /// </summary>
         SceGxmFragmentProgram* FragmentProgram;
 
         /// <summary>
-        /// Stores the world-view-projection uniform parameter used by the runtime-compiled solid-color vertex program.
+        /// Stores the world-view-projection uniform parameter used by the artifact-backed solid-color vertex program.
         /// </summary>
         const SceGxmProgramParameter* WorldViewProjectionParameter;
 
         /// <summary>
-        /// Stores the base-color uniform parameter used by the runtime-compiled solid-color fragment program.
+        /// Stores the base-color uniform parameter used by the artifact-backed solid-color fragment program.
         /// </summary>
         const SceGxmProgramParameter* BaseColorParameter;
 
         /// <summary>
-        /// Stores one persistent copy of the runtime-compiled solid-color vertex program header.
+        /// Stores one persistent copy of the artifact-backed solid-color vertex program header.
         /// </summary>
         void* VertexProgramData;
 
@@ -111,7 +111,7 @@ namespace helengine::psvita::rendering {
         std::size_t VertexProgramDataSize;
 
         /// <summary>
-        /// Stores one persistent copy of the runtime-compiled solid-color fragment program header.
+        /// Stores one persistent copy of the artifact-backed solid-color fragment program header.
         /// </summary>
         void* FragmentProgramData;
 
@@ -161,10 +161,6 @@ namespace helengine::psvita::rendering {
         unsigned int PatcherFragmentUsseOffset;
 
         /// <summary>
-        /// Stores the loaded shader-compiler module identifier for the current process lifetime.
-        /// </summary>
-        SceUID ShaderCompilerModuleId;
-
         /// <summary>
         /// Stores whether one prior initialization attempt has already failed and should no longer be retried during the current process lifetime.
         /// </summary>

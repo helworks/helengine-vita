@@ -14,7 +14,7 @@
 
 namespace {
     constexpr std::array<unsigned char, 4> PackedModelMagic = {'P', 'V', 'M', '1'};
-    constexpr std::uint32_t PackedModelVersion = 1u;
+    constexpr std::uint32_t PackedModelVersion = 3u;
 
     /// Reads one primitive value from the supplied packed-model file.
     template<typename TValue>
@@ -97,6 +97,28 @@ namespace helengine::psvita::rendering {
                 positions.push_back(ReadFloat3(file));
             }
 
+            const std::int32_t normalCount = ReadValue<std::int32_t>(file);
+            if (normalCount != positionCount) {
+                throw new InvalidOperationException("PS Vita packed model normals must align with positions.");
+            }
+
+            std::vector<::float3> normals;
+            normals.reserve(static_cast<std::size_t>(normalCount));
+            for (std::int32_t normalIndex = 0; normalIndex < normalCount; ++normalIndex) {
+                normals.push_back(ReadFloat3(file));
+            }
+
+            const std::int32_t texCoordCount = ReadValue<std::int32_t>(file);
+            if (texCoordCount != 0 && texCoordCount != positionCount) {
+                throw new InvalidOperationException("PS Vita packed model texture coordinates must align with positions.");
+            }
+
+            std::vector<::float2> texCoords;
+            texCoords.reserve(static_cast<std::size_t>(texCoordCount));
+            for (std::int32_t texCoordIndex = 0; texCoordIndex < texCoordCount; ++texCoordIndex) {
+                texCoords.push_back(::float2(ReadValue<float>(file), ReadValue<float>(file)));
+            }
+
             ReadFloat3(file);
             ReadFloat3(file);
 
@@ -105,7 +127,8 @@ namespace helengine::psvita::rendering {
                 throw new InvalidOperationException("PS Vita packed model submesh counts cannot be negative.");
             }
 
-            auto* runtimeModel = new PsVitaRuntimeModel(std::move(positions), std::vector<::float3>());
+            auto* runtimeModel = new PsVitaRuntimeModel(std::move(positions), std::move(normals));
+            runtimeModel->SetTexCoords(std::move(texCoords));
             auto* runtimeSubmeshes = new Array<rendering::PsVitaRuntimeSubmesh*>(submeshCount);
             for (std::int32_t submeshIndex = 0; submeshIndex < submeshCount; ++submeshIndex) {
                 std::string materialSlotName = ReadString(file);

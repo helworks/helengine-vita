@@ -88,4 +88,34 @@ public sealed class PsVitaRenderManager2DSourceAuditTests {
         Assert.DoesNotContain("const ::Int2& size", headerSource, StringComparison.Ordinal);
         Assert.DoesNotContain("::Int2 size = shape->get_Size();", sourceCode, StringComparison.Ordinal);
     }
+
+    /// <summary>
+    /// Verifies the Vita 2D visitor rejects drawables whose entity or ancestor is disabled before invoking their draw callback.
+    /// </summary>
+    [Fact]
+    public void Source_whenVisitingDrawables_requiresHierarchyEnabledEntity() {
+        string sourcePath = PsVitaRepositoryPathResolver.ResolvePath("src", "platform", "psvita", "rendering", "PsVitaRenderManager2D.cpp");
+        string sourceCode = File.ReadAllText(sourcePath);
+
+        Assert.Contains("if (parent == nullptr || !parent->get_IsHierarchyEnabled()) {", sourceCode, StringComparison.Ordinal);
+        Assert.DoesNotContain("if (parent == nullptr || !parent->get_Enabled()) {", sourceCode, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Verifies the PS Vita text renderer emits each authored shadow and outline pass before the foreground glyph.
+    /// </summary>
+    [Fact]
+    public void Source_whenDrawingText_emitsShadowOutlineAndForegroundGlyphPasses() {
+        string sourcePath = PsVitaRepositoryPathResolver.ResolvePath("src", "platform", "psvita", "rendering", "PsVitaRenderManager2D.cpp");
+        string sourceCode = File.ReadAllText(sourcePath);
+
+        Assert.Contains("get_ShadowOffset", sourceCode, StringComparison.Ordinal);
+        Assert.Contains("get_ShadowColor", sourceCode, StringComparison.Ordinal);
+        Assert.Contains("get_OutlineScale", sourceCode, StringComparison.Ordinal);
+        Assert.Contains("get_OutlineColor", sourceCode, StringComparison.Ordinal);
+        Assert.Contains("float2(-outlineScale, 0.0f)", sourceCode, StringComparison.Ordinal);
+        Assert.Contains("float2(outlineScale, 0.0f)", sourceCode, StringComparison.Ordinal);
+        Assert.Contains("float2(0.0f, -outlineScale)", sourceCode, StringComparison.Ordinal);
+        Assert.Contains("float2(0.0f, outlineScale)", sourceCode, StringComparison.Ordinal);
+    }
 }

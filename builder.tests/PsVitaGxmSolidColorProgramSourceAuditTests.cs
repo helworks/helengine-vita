@@ -53,19 +53,18 @@ public sealed class PsVitaGxmSolidColorProgramSourceAuditTests {
     }
 
     /// <summary>
-    /// Verifies the PS Vita solid-color mesh path compiles the shader at runtime and binds real GXM programs instead of keeping the old no-op placeholder body.
+    /// Verifies the PS Vita solid-color mesh path loads exported shader artifacts and binds real GXM programs instead of compiling during startup.
     /// </summary>
     [Fact]
-    public void Source_whenSolidColorMeshShaderPipelineCompilesAtRuntime_usesShaccCgAndRealGxmBinding() {
+    public void Source_whenSolidColorShaderArtifactsAreCooked_usesArtifactLoadingAndRealGxmBinding() {
         string rendererSource = File.ReadAllText(GetRendererPath());
         string wrapperSource = File.ReadAllText(PsVitaRepositoryPathResolver.ResolvePath("src", "platform", "psvita", "rendering", "PsVitaGxmSolidColorProgram.cpp"));
         string drawSolidColorMeshSource = GetDrawSolidColorMeshSource();
 
-        Assert.Contains("#include <psp2/shacccg.h>", wrapperSource, StringComparison.Ordinal);
-        Assert.Contains("sceKernelLoadStartModule", wrapperSource, StringComparison.Ordinal);
-        Assert.Contains("sceShaccCgInitializeCompileOptions", wrapperSource, StringComparison.Ordinal);
-        Assert.Contains("sceShaccCgCompileProgram", wrapperSource, StringComparison.Ordinal);
-        Assert.Contains("sceShaccCgDestroyCompileOutput", wrapperSource, StringComparison.Ordinal);
+        Assert.Contains("PsVitaShaderArtifactReader", wrapperSource, StringComparison.Ordinal);
+        Assert.Contains("SolidColorVertexArtifactPath", wrapperSource, StringComparison.Ordinal);
+        Assert.Contains("SolidColorFragmentArtifactPath", wrapperSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("sceShaccCgCompileProgram", wrapperSource, StringComparison.Ordinal);
         Assert.Contains("sceGxmShaderPatcherCreate", wrapperSource, StringComparison.Ordinal);
         Assert.Contains("sceGxmShaderPatcherCreateVertexProgram", wrapperSource, StringComparison.Ordinal);
         Assert.Contains("sceGxmShaderPatcherCreateFragmentProgram", wrapperSource, StringComparison.Ordinal);
@@ -85,16 +84,16 @@ public sealed class PsVitaGxmSolidColorProgramSourceAuditTests {
     }
 
     /// <summary>
-    /// Verifies the PS Vita runtime shader path records one failed initialization attempt so Vita3K can fall back to the existing CPU mesh path instead of reloading the missing shader compiler every frame.
+    /// Verifies the PS Vita artifact path records one failed initialization attempt instead of retrying missing staged artifacts every frame.
     /// </summary>
     [Fact]
-    public void Source_whenShaderCompilerModuleIsUnavailable_recordsOneFailureAndStopsRetrying() {
+    public void Source_whenShaderArtifactIsUnavailable_recordsOneFailureAndStopsRetrying() {
         string headerSource = File.ReadAllText(PsVitaRepositoryPathResolver.ResolvePath("src", "platform", "psvita", "rendering", "PsVitaGxmSolidColorProgram.hpp"));
         string wrapperSource = File.ReadAllText(PsVitaRepositoryPathResolver.ResolvePath("src", "platform", "psvita", "rendering", "PsVitaGxmSolidColorProgram.cpp"));
 
         Assert.Contains("bool InitializationFailed;", headerSource, StringComparison.Ordinal);
         Assert.Contains(", InitializationFailed(false)", wrapperSource, StringComparison.Ordinal);
-        Assert.Contains("if (InitializationFailed) {", wrapperSource, StringComparison.Ordinal);
+        Assert.Contains("InitializationFailed ||", wrapperSource, StringComparison.Ordinal);
         Assert.Contains("InitializationFailed = true;", wrapperSource, StringComparison.Ordinal);
         Assert.Contains("InitializationFailed = false;", wrapperSource, StringComparison.Ordinal);
     }
@@ -125,7 +124,7 @@ public sealed class PsVitaGxmSolidColorProgramSourceAuditTests {
     private static string GetDrawSolidColorMeshSource() {
         string rendererSource = File.ReadAllText(GetRendererPath());
         const string methodSignature = "bool PsVitaGxmRenderer::DrawSolidColorMesh(";
-        const string nextMethodSummary = "    /// Presents the current frame through the PS Vita display path.";
+        const string nextMethodSummary = "    /// Draws one indexed runtime mesh through the artifact-backed GPU forward-Lambert path.";
 
         int methodStart = rendererSource.IndexOf(methodSignature, StringComparison.Ordinal);
         Assert.True(methodStart >= 0, "Expected one PS Vita solid-color mesh function definition.");

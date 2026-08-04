@@ -22,6 +22,16 @@ namespace helengine::psvita::rendering {
         return Normals;
     }
 
+    /// Gets the copied model-space texture coordinates aligned with the model positions.
+    const std::vector<::float2>& PsVitaRuntimeModel::GetTexCoords() const {
+        return TexCoords;
+    }
+
+    /// Stores the copied model-space texture coordinates used by textured mesh submission.
+    void PsVitaRuntimeModel::SetTexCoords(std::vector<::float2> texCoords) {
+        TexCoords = std::move(texCoords);
+    }
+
     /// Gets the Vita-owned runtime submesh collection used by the mesh path.
     Array<PsVitaRuntimeSubmesh*>* PsVitaRuntimeModel::get_Submeshes() const {
         return Submeshes;

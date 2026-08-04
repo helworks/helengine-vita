@@ -6,6 +6,7 @@
 
 #include "RuntimeModel.hpp"
 #include "runtime/array.hpp"
+#include "float2.hpp"
 #include "float3.hpp"
 
 namespace helengine::psvita::rendering {
@@ -23,6 +24,12 @@ namespace helengine::psvita::rendering {
         /// Gets the copied model-space normals owned by this runtime model.
         const std::vector<::float3>& GetNormals() const;
 
+        /// Gets the copied model-space texture coordinates aligned with the model positions.
+        const std::vector<::float2>& GetTexCoords() const;
+
+        /// Stores the copied model-space texture coordinates used by textured mesh submission.
+        void SetTexCoords(std::vector<::float2> texCoords);
+
         /// Gets the Vita-owned runtime submesh collection used by the mesh path.
         Array<PsVitaRuntimeSubmesh*>* get_Submeshes() const;
 
@@ -35,6 +42,9 @@ namespace helengine::psvita::rendering {
 
         /// Stores the copied model-space normals used by the PS Vita Lambert fallback renderer.
         std::vector<::float3> Normals;
+
+        /// Stores the copied model-space texture coordinates used by textured mesh submission.
+        std::vector<::float2> TexCoords;
 
         /// Stores the Vita-owned runtime submesh collection used by the mesh path.
         Array<PsVitaRuntimeSubmesh*>* Submeshes;

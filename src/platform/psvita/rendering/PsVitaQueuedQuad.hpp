@@ -14,8 +14,8 @@ namespace helengine::psvita::rendering {
         /// Stores the PS Vita runtime texture used by this quad.
         PsVitaRuntimeTexture* Texture;
 
-        /// Stores the 2D render-order bucket carried by the originating drawable.
-        std::uint8_t RenderOrder;
+        /// Stores the composite camera and local 2D render order carried by the originating drawable.
+        std::uint16_t RenderOrder;
 
         /// Stores the four textured vertices that describe the quad.
         PsVitaTexturedQuadVertex Vertices[4];

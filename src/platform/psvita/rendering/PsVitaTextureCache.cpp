@@ -20,8 +20,13 @@ namespace helengine::psvita::rendering {
 
     namespace {
         constexpr const char* BootTracePath = "ux0:/data/helengine_psvita_boot.log";
+        constexpr bool EnablePsVitaBootTraceLogging = false;
         /// Appends one local PS Vita texture-cache diagnostics line to the persisted boot trace.
         void AppendTextureTrace(const std::string& message) {
+            if (!EnablePsVitaBootTraceLogging) {
+                return;
+            }
+
             std::FILE* file = std::fopen(BootTracePath, "a");
             if (file == nullptr) {
                 return;

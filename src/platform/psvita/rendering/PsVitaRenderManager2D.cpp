@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <cstdio>
 #include <stdexcept>
 #include <string>
@@ -28,6 +29,7 @@
 #include "runtime/native_exceptions.hpp"
 #include "system/io/file.hpp"
 #include "platform/psvita/rendering/PsVitaRuntimeTexture.hpp"
+#include "platform/psvita/rendering/PsVitaTextEffectPass.hpp"
 #include "TextureAsset.hpp"
 
 #if HELENGINE_PSVITA_HAS_GENERATED_CORE
@@ -35,10 +37,11 @@
 namespace helengine::psvita {
     namespace {
         constexpr const char* BootTracePath = "ux0:/data/helengine_psvita_boot.log";
+        constexpr bool EnablePsVitaBootTraceLogging = false;
         constexpr int RoundedCornerSegmentCount = 8;
 
         void AppendRenderTrace(const char* message) {
-            if (message == nullptr) {
+            if (!EnablePsVitaBootTraceLogging || message == nullptr) {
                 return;
             }
 
@@ -111,6 +114,7 @@ namespace helengine::psvita {
             throw new ArgumentNullException("camera");
         }
 
+        ActiveCameraRenderOrder = camera->get_CameraDrawOrder();
         ::IRenderQueue2D* renderQueue = camera->get_RenderQueue2D();
         if (renderQueue == nullptr) {
             return;
@@ -128,17 +132,46 @@ namespace helengine::psvita {
         std::stable_sort(QueuedSolidColorTriangles.begin(), QueuedSolidColorTriangles.end(), [](const rendering::PsVitaSolidColorVertex& left, const rendering::PsVitaSolidColorVertex& right) {
             return left.RenderOrder < right.RenderOrder;
         });
-        std::sort(QueuedQuads.begin(), QueuedQuads.end(), [](const rendering::PsVitaQueuedQuad& left, const rendering::PsVitaQueuedQuad& right) {
+        std::stable_sort(QueuedQuads.begin(), QueuedQuads.end(), [](const rendering::PsVitaQueuedQuad& left, const rendering::PsVitaQueuedQuad& right) {
             if (left.RenderOrder != right.RenderOrder) {
                 return left.RenderOrder < right.RenderOrder;
             }
 
-            return left.Texture < right.Texture;
+            return false;
         });
 
         if (GxmRenderer != nullptr) {
-            GxmRenderer->SubmitSolidColorTriangles(QueuedSolidColorTriangles);
-            GxmRenderer->SubmitQuads(QueuedQuads);
+            std::size_t solidColorIndex = 0u;
+            std::size_t quadIndex = 0u;
+            std::vector<rendering::PsVitaSolidColorVertex> solidColorLayer;
+            std::vector<rendering::PsVitaQueuedQuad> quadLayer;
+            while (solidColorIndex < QueuedSolidColorTriangles.size() || quadIndex < QueuedQuads.size()) {
+                std::uint16_t renderOrder = solidColorIndex < QueuedSolidColorTriangles.size()
+                    ? QueuedSolidColorTriangles[solidColorIndex].RenderOrder
+                    : QueuedQuads[quadIndex].RenderOrder;
+                if (quadIndex < QueuedQuads.size() && QueuedQuads[quadIndex].RenderOrder < renderOrder) {
+                    renderOrder = QueuedQuads[quadIndex].RenderOrder;
+                }
+                solidColorLayer.clear();
+                while (solidColorIndex < QueuedSolidColorTriangles.size()
+                    && QueuedSolidColorTriangles[solidColorIndex].RenderOrder == renderOrder) {
+                    solidColorLayer.push_back(QueuedSolidColorTriangles[solidColorIndex]);
+                    ++solidColorIndex;
+                }
+                if (!solidColorLayer.empty()) {
+                    GxmRenderer->SubmitSolidColorTriangles(solidColorLayer);
+                }
+
+                quadLayer.clear();
+                while (quadIndex < QueuedQuads.size()
+                    && QueuedQuads[quadIndex].RenderOrder == renderOrder) {
+                    quadLayer.push_back(QueuedQuads[quadIndex]);
+                    ++quadIndex;
+                }
+                if (!quadLayer.empty()) {
+                    GxmRenderer->SubmitQuads(quadLayer);
+                }
+            }
         }
 
         QueuedSolidColorTriangles.clear();
@@ -307,7 +340,7 @@ namespace helengine::psvita {
 
         rendering::PsVitaQueuedQuad queuedQuad{};
         queuedQuad.Texture = texture;
-        queuedQuad.RenderOrder = sprite->get_RenderOrder2D();
+        queuedQuad.RenderOrder = ComposeRenderOrder(ActiveCameraRenderOrder, sprite->get_RenderOrder2D());
 
         double topLeftOffsetX = -halfWidth;
         double topLeftOffsetY = -halfHeight;
@@ -403,11 +436,23 @@ namespace helengine::psvita {
         double baseY = static_cast<double>(position.Y);
         double lineHeight = std::max(static_cast<double>(font->get_LineHeight()) * fontScale, 1.0);
         ::int2 layoutSizeValue = text->get_Size();
-        byte4 color = text->get_Color();
-        std::uint32_t packedColor = (static_cast<std::uint32_t>(color.W) << 24)
-            | (static_cast<std::uint32_t>(color.Z) << 16)
-            | (static_cast<std::uint32_t>(color.Y) << 8)
-            | static_cast<std::uint32_t>(color.X);
+        std::vector<rendering::PsVitaTextEffectPass> effectPasses;
+        effectPasses.reserve(6u);
+        ::float2 shadowOffset = text->get_ShadowOffset();
+        if (shadowOffset.X != 0.0f || shadowOffset.Y != 0.0f) {
+            effectPasses.push_back(rendering::PsVitaTextEffectPass { shadowOffset, text->get_ShadowColor() });
+        }
+
+        float outlineScale = text->get_OutlineScale();
+        if (outlineScale > 0.0f) {
+            ::byte4 outlineColor = text->get_OutlineColor();
+            effectPasses.push_back(rendering::PsVitaTextEffectPass { ::float2(-outlineScale, 0.0f), outlineColor });
+            effectPasses.push_back(rendering::PsVitaTextEffectPass { ::float2(outlineScale, 0.0f), outlineColor });
+            effectPasses.push_back(rendering::PsVitaTextEffectPass { ::float2(0.0f, -outlineScale), outlineColor });
+            effectPasses.push_back(rendering::PsVitaTextEffectPass { ::float2(0.0f, outlineScale), outlineColor });
+        }
+
+        effectPasses.push_back(rendering::PsVitaTextEffectPass { ::float2(0.0f, 0.0f), text->get_Color() });
 
         for (std::size_t lineIndex = 0; lineIndex < lines.size(); ++lineIndex) {
             const std::string& line = lines[lineIndex];
@@ -434,35 +479,38 @@ namespace helengine::psvita {
                 double glyphX = baseX + lineOffsetX + offsetX;
                 double glyphY = baseY + lineOffsetY + (static_cast<double>(glyph.OffsetY) * fontScale);
 
-                rendering::PsVitaQueuedQuad queuedQuad{};
-                queuedQuad.Texture = texture;
-                queuedQuad.RenderOrder = text->get_RenderOrder2D();
+                for (const rendering::PsVitaTextEffectPass& effectPass : effectPasses) {
+                    std::uint32_t packedColor = PackColorAbgr(effectPass.Color);
+                    rendering::PsVitaQueuedQuad queuedQuad{};
+                    queuedQuad.Texture = texture;
+                    queuedQuad.RenderOrder = ComposeRenderOrder(ActiveCameraRenderOrder, text->get_RenderOrder2D());
 
-                queuedQuad.Vertices[0].PositionX = static_cast<float>(glyphX);
-                queuedQuad.Vertices[0].PositionY = static_cast<float>(glyphY);
-                queuedQuad.Vertices[0].TextureU = glyph.SourceRect.X;
-                queuedQuad.Vertices[0].TextureV = glyph.SourceRect.Y;
-                queuedQuad.Vertices[0].ColorAbgr = packedColor;
+                    queuedQuad.Vertices[0].PositionX = static_cast<float>(glyphX + static_cast<double>(effectPass.Offset.X));
+                    queuedQuad.Vertices[0].PositionY = static_cast<float>(glyphY + static_cast<double>(effectPass.Offset.Y));
+                    queuedQuad.Vertices[0].TextureU = glyph.SourceRect.X;
+                    queuedQuad.Vertices[0].TextureV = glyph.SourceRect.Y;
+                    queuedQuad.Vertices[0].ColorAbgr = packedColor;
 
-                queuedQuad.Vertices[1].PositionX = static_cast<float>(glyphX + glyphWidth);
-                queuedQuad.Vertices[1].PositionY = static_cast<float>(glyphY);
-                queuedQuad.Vertices[1].TextureU = glyph.SourceRect.X + glyph.SourceRect.Z;
-                queuedQuad.Vertices[1].TextureV = glyph.SourceRect.Y;
-                queuedQuad.Vertices[1].ColorAbgr = packedColor;
+                    queuedQuad.Vertices[1].PositionX = static_cast<float>(glyphX + glyphWidth + static_cast<double>(effectPass.Offset.X));
+                    queuedQuad.Vertices[1].PositionY = static_cast<float>(glyphY + static_cast<double>(effectPass.Offset.Y));
+                    queuedQuad.Vertices[1].TextureU = glyph.SourceRect.X + glyph.SourceRect.Z;
+                    queuedQuad.Vertices[1].TextureV = glyph.SourceRect.Y;
+                    queuedQuad.Vertices[1].ColorAbgr = packedColor;
 
-                queuedQuad.Vertices[2].PositionX = static_cast<float>(glyphX);
-                queuedQuad.Vertices[2].PositionY = static_cast<float>(glyphY + glyphHeight);
-                queuedQuad.Vertices[2].TextureU = glyph.SourceRect.X;
-                queuedQuad.Vertices[2].TextureV = glyph.SourceRect.Y + glyph.SourceRect.W;
-                queuedQuad.Vertices[2].ColorAbgr = packedColor;
+                    queuedQuad.Vertices[2].PositionX = static_cast<float>(glyphX + static_cast<double>(effectPass.Offset.X));
+                    queuedQuad.Vertices[2].PositionY = static_cast<float>(glyphY + glyphHeight + static_cast<double>(effectPass.Offset.Y));
+                    queuedQuad.Vertices[2].TextureU = glyph.SourceRect.X;
+                    queuedQuad.Vertices[2].TextureV = glyph.SourceRect.Y + glyph.SourceRect.W;
+                    queuedQuad.Vertices[2].ColorAbgr = packedColor;
 
-                queuedQuad.Vertices[3].PositionX = static_cast<float>(glyphX + glyphWidth);
-                queuedQuad.Vertices[3].PositionY = static_cast<float>(glyphY + glyphHeight);
-                queuedQuad.Vertices[3].TextureU = glyph.SourceRect.X + glyph.SourceRect.Z;
-                queuedQuad.Vertices[3].TextureV = glyph.SourceRect.Y + glyph.SourceRect.W;
-                queuedQuad.Vertices[3].ColorAbgr = packedColor;
+                    queuedQuad.Vertices[3].PositionX = static_cast<float>(glyphX + glyphWidth + static_cast<double>(effectPass.Offset.X));
+                    queuedQuad.Vertices[3].PositionY = static_cast<float>(glyphY + glyphHeight + static_cast<double>(effectPass.Offset.Y));
+                    queuedQuad.Vertices[3].TextureU = glyph.SourceRect.X + glyph.SourceRect.Z;
+                    queuedQuad.Vertices[3].TextureV = glyph.SourceRect.Y + glyph.SourceRect.W;
+                    queuedQuad.Vertices[3].ColorAbgr = packedColor;
 
-                QueuedQuads.push_back(queuedQuad);
+                    QueuedQuads.push_back(queuedQuad);
+                }
 
                 double advanceWidth = glyph.AdvanceWidth > 0.0f
                     ? static_cast<double>(glyph.AdvanceWidth) * fontScale
@@ -479,7 +527,7 @@ namespace helengine::psvita {
         }
 
         ::Entity* parent = drawable->get_Parent();
-        if (parent == nullptr || !parent->get_Enabled()) {
+        if (parent == nullptr || !parent->get_IsHierarchyEnabled()) {
             return;
         }
 
@@ -500,19 +548,19 @@ namespace helengine::psvita {
             x0,
             y0,
             colorAbgr,
-            renderOrder
+            ComposeRenderOrder(ActiveCameraRenderOrder, renderOrder)
         });
         QueuedSolidColorTriangles.push_back(rendering::PsVitaSolidColorVertex {
             x1,
             y1,
             colorAbgr,
-            renderOrder
+            ComposeRenderOrder(ActiveCameraRenderOrder, renderOrder)
         });
         QueuedSolidColorTriangles.push_back(rendering::PsVitaSolidColorVertex {
             x2,
             y2,
             colorAbgr,
-            renderOrder
+            ComposeRenderOrder(ActiveCameraRenderOrder, renderOrder)
         });
     }
 
@@ -623,6 +671,11 @@ namespace helengine::psvita {
                 colorAbgr,
                 renderOrder);
         }
+    }
+
+    /// Combines one camera draw order and one local drawable order into a stable global queue key.
+    std::uint16_t PsVitaRenderManager2D::ComposeRenderOrder(std::uint16_t cameraRenderOrder, std::uint8_t renderOrder) {
+        return static_cast<std::uint16_t>((cameraRenderOrder << 8u) | renderOrder);
     }
 
     /// Packs one engine byte color into the ABGR layout expected by Vita2D.

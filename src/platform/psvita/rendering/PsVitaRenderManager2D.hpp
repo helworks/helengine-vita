@@ -2,6 +2,7 @@
 
 #if HELENGINE_PSVITA_HAS_GENERATED_CORE
 
+#include <cstdint>
 #include <vector>
 
 class ICamera;
@@ -102,8 +103,14 @@ namespace helengine::psvita {
         /// Packs one engine byte color into the ABGR layout expected by Vita2D.
         static std::uint32_t PackColorAbgr(const byte4& color);
 
+        /// Combines camera draw order and local drawable order into one globally sortable Vita submission key.
+        static std::uint16_t ComposeRenderOrder(std::uint16_t cameraRenderOrder, std::uint8_t renderOrder);
+
         /// Stores the native PS Vita GXM renderer that receives queued sprite batches.
         rendering::PsVitaGxmRenderer* GxmRenderer = nullptr;
+
+        /// Stores the camera draw-order tier currently producing queued 2D primitives.
+        std::uint16_t ActiveCameraRenderOrder = 0u;
 
         /// Stores the queued solid-color rounded-rectangle triangles built during the current frame.
         std::vector<rendering::PsVitaSolidColorVertex> QueuedSolidColorTriangles;
