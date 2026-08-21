@@ -12,6 +12,7 @@ public interface IPsVitaNativeBuildExecutor {
     /// <param name="generatedCoreCppRootPath">Absolute generated core C++ root supplied by the editor.</param>
     /// <param name="stagedContentRootPath">Absolute staged cooked-content root supplied by the builder.</param>
     /// <param name="cancellationToken">Cancellation token that can stop the native build.</param>
+    /// <param name="gameTitle">Editor-authored app name stamped into the VPK metadata; empty keeps the toolchain default.</param>
     /// <returns>Absolute path to the produced VPK.</returns>
-    string Build(string repositoryRoot, string nativeBuildRoot, string generatedCoreCppRootPath, string stagedContentRootPath, CancellationToken cancellationToken);
+    string Build(string repositoryRoot, string nativeBuildRoot, string generatedCoreCppRootPath, string stagedContentRootPath, CancellationToken cancellationToken, string gameTitle = "");
 }

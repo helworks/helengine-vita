@@ -397,7 +397,11 @@ public sealed class PsVitaPlatformAssetBuilder : IPlatformAssetBuilder, IShaderB
                     nativeBuildRoot,
                     generatedCoreRoot,
                     stagedContentRootPath,
-                    cancellationToken);
+                    cancellationToken,
+                    request.SelectedBuildOptionValues != null
+                        && request.SelectedBuildOptionValues.TryGetValue("game-name", out string authoredGameName)
+                        ? authoredGameName
+                        : string.Empty);
                 string outputVpkPath = Path.Combine(request.OutputRoot, Path.GetFileName(nativeVpkPath));
                 File.Copy(nativeVpkPath, outputVpkPath, true);
                 nativeBuildSucceeded = true;
