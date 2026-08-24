@@ -199,7 +199,9 @@ namespace helengine::psvita::rendering {
 
         std::unique_ptr<PsVitaGxmShadowSubmissionMemory> submissionMemory = std::make_unique<PsVitaGxmShadowSubmissionMemory>();
         if (!submissionMemory->Allocate(indexOffset + indexBytes)) {
-            throw std::runtime_error("PS Vita ShadowDepth Shader failed to allocate transient mesh memory.");
+            throw std::runtime_error(
+                "PS Vita ShadowDepth Shader failed to allocate transient mesh memory: "
+                + submissionMemory->GetLastDiagnostic());
         }
         ::float3* gpuPositions = static_cast<::float3*>(submissionMemory->GetData());
         std::uint32_t* gpuIndices = reinterpret_cast<std::uint32_t*>(static_cast<std::uint8_t*>(submissionMemory->GetData()) + indexOffset);

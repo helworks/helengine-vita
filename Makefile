@@ -13,9 +13,12 @@ ifneq ($(strip $(HELENGINE_PSVITA_GAME_TITLE)),)
 CMAKE_ARGS += "-DHELENGINE_PSVITA_GAME_TITLE=$(HELENGINE_PSVITA_GAME_TITLE)"
 endif
 
-.PHONY: all clean
+.PHONY: all clean test-native
 
 all: $(TARGET_VPK)
+
+test-native:
+	arm-vita-eabi-g++ -std=gnu++20 -Wall -Wextra -Werror -Isrc -fsyntax-only builder.tests/native/PsVitaGxmMemoryBlockSizeTests.cpp
 
 $(BUILD_DIR)/CMakeCache.txt: CMakeLists.txt
 	@mkdir -p $(BUILD_DIR)
