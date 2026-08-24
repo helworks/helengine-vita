@@ -19,6 +19,9 @@ namespace helengine::psvita::rendering {
 
         /// Stores the four textured vertices that describe the quad.
         PsVitaTexturedQuadVertex Vertices[4];
+
+        /// Selects authored-to-native texture extent scaling for 2D UVs that address logical texture pixels.
+        bool UsesLogicalTextureExtents = false;
     };
 }
 

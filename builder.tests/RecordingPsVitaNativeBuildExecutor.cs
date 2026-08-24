@@ -35,8 +35,9 @@ sealed class RecordingPsVitaNativeBuildExecutor : IPsVitaNativeBuildExecutor {
     /// <param name="generatedCoreCppRootPath">Generated core root supplied by the builder.</param>
     /// <param name="stagedContentRootPath">Staged content root supplied by the builder.</param>
     /// <param name="cancellationToken">Cancellation token supplied by the builder.</param>
+    /// <param name="gameTitle">Game title supplied by the builder.</param>
     /// <returns>Path to the fake VPK artifact.</returns>
-    public string Build(string repositoryRoot, string nativeBuildRoot, string generatedCoreCppRootPath, string stagedContentRootPath, CancellationToken cancellationToken) {
+    public string Build(string repositoryRoot, string nativeBuildRoot, string generatedCoreCppRootPath, string stagedContentRootPath, CancellationToken cancellationToken, string gameTitle = "") {
         WasCalled = true;
         RepositoryRootPath = repositoryRoot;
         GeneratedCoreRootPath = generatedCoreCppRootPath;

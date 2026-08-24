@@ -341,6 +341,7 @@ namespace helengine::psvita {
         rendering::PsVitaQueuedQuad queuedQuad{};
         queuedQuad.Texture = texture;
         queuedQuad.RenderOrder = ComposeRenderOrder(ActiveCameraRenderOrder, sprite->get_RenderOrder2D());
+        queuedQuad.UsesLogicalTextureExtents = true;
 
         double topLeftOffsetX = -halfWidth;
         double topLeftOffsetY = -halfHeight;
@@ -484,6 +485,7 @@ namespace helengine::psvita {
                     rendering::PsVitaQueuedQuad queuedQuad{};
                     queuedQuad.Texture = texture;
                     queuedQuad.RenderOrder = ComposeRenderOrder(ActiveCameraRenderOrder, text->get_RenderOrder2D());
+                    queuedQuad.UsesLogicalTextureExtents = true;
 
                     queuedQuad.Vertices[0].PositionX = static_cast<float>(glyphX + static_cast<double>(effectPass.Offset.X));
                     queuedQuad.Vertices[0].PositionY = static_cast<float>(glyphY + static_cast<double>(effectPass.Offset.Y));

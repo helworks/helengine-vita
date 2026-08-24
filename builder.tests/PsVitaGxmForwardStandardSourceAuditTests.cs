@@ -25,6 +25,17 @@ public sealed class PsVitaGxmForwardStandardSourceAuditTests {
     }
 
     /// <summary>
+    /// Ensures authored mesh UVs outside the normalized range repeat the diffuse texture instead of clamping its edge texels.
+    /// </summary>
+    [Fact]
+    public void Source_WhenDrawingTexturedStandardMaterial_RepeatsDiffuseTextureUvs() {
+        string source = File.ReadAllText(PsVitaRepositoryPathResolver.ResolvePath("src", "platform", "psvita", "rendering", "PsVitaGxmRenderer.cpp"));
+
+        Assert.Contains("sceGxmTextureSetUAddrMode(&diffuseGxmTexture, SCE_GXM_TEXTURE_ADDR_REPEAT)", source, StringComparison.Ordinal);
+        Assert.Contains("sceGxmTextureSetVAddrMode(&diffuseGxmTexture, SCE_GXM_TEXTURE_ADDR_REPEAT)", source, StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// Ensures textured material submission reads model UV coordinates before validating and binding them.
     /// </summary>
     [Fact]

@@ -543,6 +543,18 @@ namespace helengine::psvita::rendering {
                 + std::to_string(magnificationFilterResult));
         }
 
+        int horizontalAddressModeResult = sceGxmTextureSetUAddrMode(&diffuseGxmTexture, SCE_GXM_TEXTURE_ADDR_REPEAT);
+        if (horizontalAddressModeResult < 0) {
+            throw std::runtime_error("PS Vita Forward Standard Shader failed to configure horizontal diffuse texture wrapping. sceGxmTextureSetUAddrMode="
+                + std::to_string(horizontalAddressModeResult));
+        }
+
+        int verticalAddressModeResult = sceGxmTextureSetVAddrMode(&diffuseGxmTexture, SCE_GXM_TEXTURE_ADDR_REPEAT);
+        if (verticalAddressModeResult < 0) {
+            throw std::runtime_error("PS Vita Forward Standard Shader failed to configure vertical diffuse texture wrapping. sceGxmTextureSetVAddrMode="
+                + std::to_string(verticalAddressModeResult));
+        }
+
         PsVitaForwardLambertVertex* gpuVertices = static_cast<PsVitaForwardLambertVertex*>(vita2d_pool_memalign(
             static_cast<unsigned int>(sizeof(PsVitaForwardLambertVertex) * static_cast<std::size_t>(vertexCount)), 8u));
         std::uint32_t* gpuIndices = static_cast<std::uint32_t*>(vita2d_pool_memalign(
@@ -807,6 +819,14 @@ namespace helengine::psvita::rendering {
         }
 
         unsigned int colorAbgr = queuedQuad.Vertices[0].ColorAbgr;
+        float textureUScale = 1.0f;
+        float textureVScale = 1.0f;
+        if (queuedQuad.UsesLogicalTextureExtents) {
+            textureUScale = static_cast<float>(queuedQuad.Texture->GetTextureWidthPixels())
+                / static_cast<float>(gpuTexture->GetWidth());
+            textureVScale = static_cast<float>(queuedQuad.Texture->GetTextureHeightPixels())
+                / static_cast<float>(gpuTexture->GetHeight());
+        }
 
         vita2d_texture_vertex* triangleVertices = static_cast<vita2d_texture_vertex*>(vita2d_pool_memalign(
             static_cast<unsigned int>(sizeof(vita2d_texture_vertex) * 6u),
@@ -819,34 +839,34 @@ namespace helengine::psvita::rendering {
         triangleVertices[0].x = queuedQuad.Vertices[0].PositionX;
         triangleVertices[0].y = queuedQuad.Vertices[0].PositionY;
         triangleVertices[0].z = 0.5f;
-        triangleVertices[0].u = queuedQuad.Vertices[0].TextureU;
-        triangleVertices[0].v = queuedQuad.Vertices[0].TextureV;
+        triangleVertices[0].u = queuedQuad.Vertices[0].TextureU * textureUScale;
+        triangleVertices[0].v = queuedQuad.Vertices[0].TextureV * textureVScale;
 
         triangleVertices[1].x = queuedQuad.Vertices[1].PositionX;
         triangleVertices[1].y = queuedQuad.Vertices[1].PositionY;
         triangleVertices[1].z = 0.5f;
-        triangleVertices[1].u = queuedQuad.Vertices[1].TextureU;
-        triangleVertices[1].v = queuedQuad.Vertices[1].TextureV;
+        triangleVertices[1].u = queuedQuad.Vertices[1].TextureU * textureUScale;
+        triangleVertices[1].v = queuedQuad.Vertices[1].TextureV * textureVScale;
 
         triangleVertices[2].x = queuedQuad.Vertices[2].PositionX;
         triangleVertices[2].y = queuedQuad.Vertices[2].PositionY;
         triangleVertices[2].z = 0.5f;
-        triangleVertices[2].u = queuedQuad.Vertices[2].TextureU;
-        triangleVertices[2].v = queuedQuad.Vertices[2].TextureV;
+        triangleVertices[2].u = queuedQuad.Vertices[2].TextureU * textureUScale;
+        triangleVertices[2].v = queuedQuad.Vertices[2].TextureV * textureVScale;
 
         triangleVertices[3] = triangleVertices[2];
 
         triangleVertices[4].x = queuedQuad.Vertices[1].PositionX;
         triangleVertices[4].y = queuedQuad.Vertices[1].PositionY;
         triangleVertices[4].z = 0.5f;
-        triangleVertices[4].u = queuedQuad.Vertices[1].TextureU;
-        triangleVertices[4].v = queuedQuad.Vertices[1].TextureV;
+        triangleVertices[4].u = queuedQuad.Vertices[1].TextureU * textureUScale;
+        triangleVertices[4].v = queuedQuad.Vertices[1].TextureV * textureVScale;
 
         triangleVertices[5].x = queuedQuad.Vertices[3].PositionX;
         triangleVertices[5].y = queuedQuad.Vertices[3].PositionY;
         triangleVertices[5].z = 0.5f;
-        triangleVertices[5].u = queuedQuad.Vertices[3].TextureU;
-        triangleVertices[5].v = queuedQuad.Vertices[3].TextureV;
+        triangleVertices[5].u = queuedQuad.Vertices[3].TextureU * textureUScale;
+        triangleVertices[5].v = queuedQuad.Vertices[3].TextureV * textureVScale;
 
         vita2d_draw_array_textured(
             gpuTexture->GetNativeTexture(),

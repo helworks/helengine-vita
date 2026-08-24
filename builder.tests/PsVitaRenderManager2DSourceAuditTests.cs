@@ -90,6 +90,37 @@ public sealed class PsVitaRenderManager2DSourceAuditTests {
     }
 
     /// <summary>
+    /// Ensures 2D sprites sample only their authored texels when Vita stores them in larger padded native allocations.
+    /// </summary>
+    [Fact]
+    public void Source_whenDrawingSprites_excludesPaddedTextureTexelsFromLogicalUvs() {
+        string queuedQuadPath = PsVitaRepositoryPathResolver.ResolvePath("src", "platform", "psvita", "rendering", "PsVitaQueuedQuad.hpp");
+        string renderManagerPath = PsVitaRepositoryPathResolver.ResolvePath("src", "platform", "psvita", "rendering", "PsVitaRenderManager2D.cpp");
+        string rendererPath = PsVitaRepositoryPathResolver.ResolvePath("src", "platform", "psvita", "rendering", "PsVitaGxmRenderer.cpp");
+        string queuedQuadSource = File.ReadAllText(queuedQuadPath);
+        string renderManagerSource = File.ReadAllText(renderManagerPath);
+        string rendererSource = File.ReadAllText(rendererPath);
+        int drawSpriteStart = renderManagerSource.IndexOf("void PsVitaRenderManager2D::DrawSprite", StringComparison.Ordinal);
+        int drawTextStart = renderManagerSource.IndexOf("void PsVitaRenderManager2D::DrawText", StringComparison.Ordinal);
+
+        Assert.True(drawSpriteStart >= 0, "Expected the Vita DrawSprite implementation.");
+        Assert.True(drawTextStart > drawSpriteStart, "Expected DrawText to follow DrawSprite in the Vita 2D renderer.");
+        string drawSpriteSource = renderManagerSource[drawSpriteStart..drawTextStart];
+        string drawTextSource = renderManagerSource[drawTextStart..];
+
+        Assert.Contains("bool UsesLogicalTextureExtents = false;", queuedQuadSource, StringComparison.Ordinal);
+        Assert.Contains("queuedQuad.UsesLogicalTextureExtents = true;", drawSpriteSource, StringComparison.Ordinal);
+        Assert.Contains("queuedQuad.UsesLogicalTextureExtents = true;", drawTextSource, StringComparison.Ordinal);
+        Assert.Contains("queuedQuad.UsesLogicalTextureExtents", rendererSource, StringComparison.Ordinal);
+        Assert.Contains("textureUScale = static_cast<float>(queuedQuad.Texture->GetTextureWidthPixels())", rendererSource, StringComparison.Ordinal);
+        Assert.Contains("/ static_cast<float>(gpuTexture->GetWidth());", rendererSource, StringComparison.Ordinal);
+        Assert.Contains("textureVScale = static_cast<float>(queuedQuad.Texture->GetTextureHeightPixels())", rendererSource, StringComparison.Ordinal);
+        Assert.Contains("/ static_cast<float>(gpuTexture->GetHeight());", rendererSource, StringComparison.Ordinal);
+        Assert.Contains("triangleVertices[0].u = queuedQuad.Vertices[0].TextureU * textureUScale;", rendererSource, StringComparison.Ordinal);
+        Assert.Contains("triangleVertices[0].v = queuedQuad.Vertices[0].TextureV * textureVScale;", rendererSource, StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// Verifies the Vita 2D visitor rejects drawables whose entity or ancestor is disabled before invoking their draw callback.
     /// </summary>
     [Fact]
