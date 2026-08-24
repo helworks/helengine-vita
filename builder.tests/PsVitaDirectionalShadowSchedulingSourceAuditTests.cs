@@ -7,6 +7,38 @@ namespace helengine.psvita.builder.tests;
 /// </summary>
 public sealed class PsVitaDirectionalShadowSchedulingSourceAuditTests {
     /// <summary>
+    /// Verifies the camera-independent directional shadow map is populated once from active scene drawables so a later empty UI camera cannot clear it.
+    /// </summary>
+    [Fact]
+    public void Source_whenMultipleCamerasAreRegistered_buildsOneShadowPassFromSceneDrawables() {
+        string renderManagerPath = PsVitaRepositoryPathResolver.ResolvePath("src", "platform", "psvita", "rendering", "PsVitaRenderManager3D.cpp");
+        string renderManagerSource = File.ReadAllText(renderManagerPath);
+        int prepareStart = renderManagerSource.IndexOf("void PsVitaRenderManager3D::PrepareShadowMaps()", StringComparison.Ordinal);
+        int drawStart = renderManagerSource.IndexOf("void PsVitaRenderManager3D::Draw()", prepareStart, StringComparison.Ordinal);
+
+        Assert.True(prepareStart >= 0 && drawStart > prepareStart, "The Vita shadow preparation method must remain independently auditable.");
+        string prepareSource = renderManagerSource.Substring(prepareStart, drawStart - prepareStart);
+        Assert.Contains("get_Drawables3D()", prepareSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("get_Cameras()", prepareSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("get_RenderQueue3D()", prepareSource, StringComparison.Ordinal);
+        Assert.Equal(1, CountOccurrences(prepareSource, "BeginShadowDepthPass()"));
+        Assert.Equal(1, CountOccurrences(prepareSource, "EndShadowDepthPass()"));
+        int beginPassIndex = prepareSource.IndexOf("BeginShadowDepthPass()", StringComparison.Ordinal);
+        int drawableLoopIndex = prepareSource.IndexOf("for (int32_t drawableIndex", StringComparison.Ordinal);
+        int visitDrawableIndex = prepareSource.IndexOf("Visit((*drawables)[drawableIndex]);", StringComparison.Ordinal);
+        int endPassIndex = prepareSource.IndexOf("EndShadowDepthPass()", StringComparison.Ordinal);
+        Assert.True(
+            beginPassIndex >= 0 && beginPassIndex < drawableLoopIndex && drawableLoopIndex < visitDrawableIndex && visitDrawableIndex < endPassIndex,
+            "The single Vita shadow pass must visit every active scene drawable before the depth target is closed.");
+
+        int visitStart = renderManagerSource.IndexOf("void PsVitaRenderManager3D::Visit(::IDrawable3D* drawable)", StringComparison.Ordinal);
+        int drawCameraStart = renderManagerSource.IndexOf("void PsVitaRenderManager3D::DrawCamera(::ICamera* camera)", visitStart, StringComparison.Ordinal);
+        Assert.True(visitStart >= 0 && drawCameraStart > visitStart, "The Vita drawable visitor must remain independently auditable.");
+        string visitSource = renderManagerSource.Substring(visitStart, drawCameraStart - visitStart);
+        Assert.Contains("(!ShadowDepthPassActive && ActiveCamera == nullptr)", visitSource, StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// Verifies Standard Shader materials preserve cast and receive flags and the native renderer schedules a caster pass before shadowed receiver draws.
     /// </summary>
     [Fact]
@@ -59,5 +91,22 @@ public sealed class PsVitaDirectionalShadowSchedulingSourceAuditTests {
         Assert.True(
             bootHostSource.IndexOf("PrepareShadowMaps();", StringComparison.Ordinal) < bootHostSource.IndexOf("GxmRenderer->BeginFrame", StringComparison.Ordinal),
             "The shadow pass must finish before the main Vita frame begins.");
+    }
+
+    /// <summary>
+    /// Counts non-overlapping occurrences of one required production token.
+    /// </summary>
+    /// <param name="source">Production source section to inspect.</param>
+    /// <param name="value">Required token to count.</param>
+    /// <returns>Number of non-overlapping token occurrences.</returns>
+    static int CountOccurrences(string source, string value) {
+        int count = 0;
+        int index = 0;
+        while ((index = source.IndexOf(value, index, StringComparison.Ordinal)) >= 0) {
+            count++;
+            index += value.Length;
+        }
+
+        return count;
     }
 }

@@ -172,8 +172,14 @@ namespace helengine::psvita {
         ActiveShadowLight = nullptr;
         ActiveLightViewProjection = ::float4x4::get_Identity();
         ShadowDepthPassActive = false;
+        ActiveCamera = nullptr;
 
         if (GxmRenderer == nullptr || Core::Instance == nullptr || Core::Instance->ObjectManager == nullptr) {
+            return;
+        }
+
+        List<::IDrawable3D*>* drawables = Core::Instance->ObjectManager->get_Drawables3D();
+        if (drawables == nullptr || drawables->get_Count() == 0) {
             return;
         }
 
@@ -182,42 +188,20 @@ namespace helengine::psvita {
             return;
         }
 
-        List<::ICamera*>* cameras = Core::Instance->ObjectManager->get_Cameras();
-        if (cameras == nullptr) {
-            return;
-        }
-
         ::float4x4 lightViewProjection = BuildDirectionalLightViewProjection(directionalLight);
-        bool renderedShadowMap = false;
-        for (int32_t cameraIndex = 0; cameraIndex < cameras->get_Count(); cameraIndex++) {
-            ::ICamera* camera = (*cameras)[cameraIndex];
-            if (camera == nullptr) {
-                continue;
-            }
-
-            ::IRenderQueue3D* renderQueue = camera->get_RenderQueue3D();
-            if (renderQueue == nullptr) {
-                continue;
-            }
-
-            ActiveCamera = camera;
-            ActiveLightViewProjection = lightViewProjection;
-            ShadowDepthPassActive = GxmRenderer->BeginShadowDepthPass();
-            if (!ShadowDepthPassActive) {
-                ActiveCamera = nullptr;
-                throw new InvalidOperationException("PS Vita directional shadow rendering must begin before the main frame.");
-            }
-
-            renderQueue->VisitOrdered(this);
-            GxmRenderer->EndShadowDepthPass();
-            ShadowDepthPassActive = false;
-            ActiveCamera = nullptr;
-            renderedShadowMap = true;
+        ActiveLightViewProjection = lightViewProjection;
+        ShadowDepthPassActive = GxmRenderer->BeginShadowDepthPass();
+        if (!ShadowDepthPassActive) {
+            throw new InvalidOperationException("PS Vita directional shadow rendering must begin before the main frame.");
         }
 
-        if (renderedShadowMap) {
-            ActiveShadowLight = directionalLight;
+        for (int32_t drawableIndex = 0; drawableIndex < drawables->get_Count(); ++drawableIndex) {
+            Visit((*drawables)[drawableIndex]);
         }
+
+        GxmRenderer->EndShadowDepthPass();
+        ShadowDepthPassActive = false;
+        ActiveShadowLight = directionalLight;
     }
 
     /// Traverses camera-owned 3D queues, submits Lambert-lit mesh geometry, and forwards ordered 2D queues to the Vita 2D renderer.
@@ -489,7 +473,7 @@ namespace helengine::psvita {
 
     /// Visits one ordered 3D drawable and renders supported mesh content through the Lambert fallback path.
     void PsVitaRenderManager3D::Visit(::IDrawable3D* drawable) {
-        if (drawable == nullptr || ActiveCamera == nullptr) {
+        if (drawable == nullptr || (!ShadowDepthPassActive && ActiveCamera == nullptr)) {
             return;
         }
 
