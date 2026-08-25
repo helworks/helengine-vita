@@ -155,7 +155,7 @@ namespace helengine::psvita {
         /// Builds the shared camera view-projection matrix used by the current mesh pass.
         ::float4x4 BuildCameraViewProjection(::ICamera* camera, const ::float4& viewport) const;
 
-        /// Builds the current drawable world transform from entity position, orientation, and scale.
+        /// Gets the entity's exact recursively composed world transform.
         static ::float4x4 BuildWorldTransform(::Entity* entity);
 
         /// Projects one model-space point through the supplied world-view-projection matrix into screen space.

@@ -172,6 +172,18 @@ public sealed class PsVitaRenderManager3DSourceAuditTests {
     }
 
     /// <summary>
+    /// Verifies Vita mesh drawing consumes the entity's exact recursively composed world matrix instead of rebuilding scale, rotation, and translation in a different order.
+    /// </summary>
+    [Fact]
+    public void Source_whenBuildingVitaWorldTransform_usesEntityWorldTransformMatrix() {
+        string sourcePath = PsVitaRepositoryPathResolver.ResolvePath("src", "platform", "psvita", "rendering", "PsVitaRenderManager3D.cpp");
+        string sourceCode = File.ReadAllText(sourcePath);
+
+        Assert.Contains("return entity->get_WorldTransformMatrix();", sourceCode, StringComparison.Ordinal);
+        Assert.DoesNotContain("float4x4::Multiply__ref0_ref1_out2(rotation, size, rotationScale);", sourceCode, StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// Verifies the Vita CPU mesh projection path consumes the raw world-view-projection matrix produced by the runtime camera and entity transforms.
     /// </summary>
     [Fact]

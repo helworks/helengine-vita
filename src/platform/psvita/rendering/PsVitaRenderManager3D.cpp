@@ -1012,30 +1012,13 @@ namespace helengine::psvita {
         return viewProjection;
     }
 
-    /// Builds the current drawable world transform from entity position, orientation, and scale.
+    /// Gets the entity's exact recursively composed world transform.
     ::float4x4 PsVitaRenderManager3D::BuildWorldTransform(::Entity* entity) {
         if (entity == nullptr) {
             throw new ArgumentNullException("entity");
         }
 
-        ::float4 orientation = entity->get_Orientation();
-        ::float4x4 rotation;
-        float4x4::CreateFromQuaternion__ref0_out1(orientation, rotation);
-
-        ::float3 scale = entity->get_Scale();
-        ::float4x4 size;
-        float4x4::CreateScale__out3(scale.X, scale.Y, scale.Z, size);
-
-        ::float4x4 rotationScale;
-        float4x4::Multiply__ref0_ref1_out2(rotation, size, rotationScale);
-
-        ::float3 position = entity->get_Position();
-        ::float4x4 translation;
-        float4x4::CreateTranslation__ref0_out1(position, translation);
-
-        ::float4x4 world;
-        float4x4::Multiply__ref0_ref1_out2(rotationScale, translation, world);
-        return world;
+        return entity->get_WorldTransformMatrix();
     }
 
     /// Projects one model-space point through the supplied world-view-projection matrix into screen space.
