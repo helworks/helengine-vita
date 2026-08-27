@@ -10,8 +10,8 @@ public sealed class PsVitaGeneratedRuntimeComponentSupportWriter {
     /// <summary>
     /// Engine-owned component types whose automatic runtime payloads must be supported by the first Vita menu bootstrap.
     /// </summary>
-    static readonly Dictionary<string, Type> SupportedEngineComponentTypesById = new(StringComparer.OrdinalIgnoreCase) {
-        ["helengine.AnchorComponent"] = typeof(AnchorComponent),
+    static readonly Dictionary<string, Type> SupportedEngineComponentTypesById = new(StringComparer.Ordinal) {
+        ["helengine.LayoutComponent"] = typeof(LayoutComponent),
         ["helengine.ClipRectComponent"] = typeof(ClipRectComponent),
         ["helengine.ReferenceCanvasFitComponent"] = typeof(ReferenceCanvasFitComponent),
         ["helengine.RoundedRectComponent"] = typeof(RoundedRectComponent),
@@ -24,7 +24,7 @@ public sealed class PsVitaGeneratedRuntimeComponentSupportWriter {
     /// <summary>
     /// Component type identifiers already covered by generated-core-owned manual runtime deserializers.
     /// </summary>
-    static readonly HashSet<string> BuiltInRuntimeDeserializerComponentTypeIds = new(StringComparer.OrdinalIgnoreCase) {
+    static readonly HashSet<string> BuiltInRuntimeDeserializerComponentTypeIds = new(StringComparer.Ordinal) {
         "helengine.CameraComponent",
         "helengine.FPSComponent",
         "helengine.MeshComponent",
@@ -155,7 +155,7 @@ public sealed class PsVitaGeneratedRuntimeComponentSupportWriter {
         List<Type> componentTypes = [];
         HashSet<Type> seenTypes = [];
         for (int componentIndex = 0; componentIndex < componentTypeIds.Count; componentIndex++) {
-            string componentTypeId = NormalizeLegacyEngineComponentTypeId(componentTypeIds[componentIndex]);
+            string componentTypeId = componentTypeIds[componentIndex];
             if (string.IsNullOrWhiteSpace(componentTypeId) || BuiltInRuntimeDeserializerComponentTypeIds.Contains(componentTypeId)) {
                 continue;
             }
@@ -304,29 +304,6 @@ public sealed class PsVitaGeneratedRuntimeComponentSupportWriter {
         }
 
         File.WriteAllText(Path.Combine(generatedCoreRootPath, "helengine_core_unity.cpp"), builder.ToString(), Encoding.UTF8);
-    }
-
-    /// <summary>
-    /// Normalizes one legacy assembly-qualified engine component identifier to the short runtime form used by generated-core component classes.
-    /// </summary>
-    /// <param name="componentTypeId">Serialized component identifier under evaluation.</param>
-    /// <returns>Short engine component identifier when the supplied identifier uses the legacy engine assembly-qualified form; otherwise the original identifier.</returns>
-    static string NormalizeLegacyEngineComponentTypeId(string componentTypeId) {
-        if (string.IsNullOrWhiteSpace(componentTypeId)) {
-            return string.Empty;
-        }
-
-        return componentTypeId switch {
-            "helengine.AnchorComponent, helengine.core" => "helengine.AnchorComponent",
-            "helengine.ClipRectComponent, helengine.core" => "helengine.ClipRectComponent",
-            "helengine.ReferenceCanvasFitComponent, helengine.core" => "helengine.ReferenceCanvasFitComponent",
-            "helengine.RoundedRectComponent, helengine.core" => "helengine.RoundedRectComponent",
-            "helengine.ScrollComponent, helengine.core" => "helengine.ScrollComponent",
-            "helengine.SpriteComponent, helengine.core" => "helengine.SpriteComponent",
-            "helengine.TextComponent, helengine.core" => "helengine.TextComponent",
-            "helengine.ViewportComponent, helengine.core" => "helengine.ViewportComponent",
-            _ => componentTypeId
-        };
     }
 
     /// <summary>
