@@ -105,7 +105,9 @@ public sealed class PsVitaPlatformAssetBuilderTests {
                 [],
                 [],
                 [],
-                new PlatformContainerWritePlan(string.Empty, []));
+                new PlatformContainerWritePlan(string.Empty, []),
+                Array.Empty<PlatformCookWorkItem>(),
+                PlatformBuildRuntimeFeatureManifest.Empty);
 
             PlatformBuildRequest request = new(
                 manifest,
@@ -202,7 +204,9 @@ public sealed class PsVitaPlatformAssetBuilderTests {
                 [],
                 [],
                 [],
-                new PlatformContainerWritePlan(string.Empty, []));
+                new PlatformContainerWritePlan(string.Empty, []),
+                Array.Empty<PlatformCookWorkItem>(),
+                PlatformBuildRuntimeFeatureManifest.Empty);
 
             PlatformBuildRequest request = new(
                 manifest,
@@ -294,7 +298,9 @@ public sealed class PsVitaPlatformAssetBuilderTests {
                 [],
                 [],
                 [],
-                new PlatformContainerWritePlan(string.Empty, []));
+                new PlatformContainerWritePlan(string.Empty, []),
+                Array.Empty<PlatformCookWorkItem>(),
+                PlatformBuildRuntimeFeatureManifest.Empty);
 
             PlatformBuildRequest request = new(
                 manifest,
@@ -389,7 +395,7 @@ public sealed class PsVitaPlatformAssetBuilderTests {
         Assert.Equal(0x66 / 255f, BitConverter.ToSingle(baseColorBuffer.Data, 4));
         Assert.Equal(0x99 / 255f, BitConverter.ToSingle(baseColorBuffer.Data, 8));
         Assert.Equal(1f, BitConverter.ToSingle(baseColorBuffer.Data, 12));
-        Assert.Empty(result.ReferencedShaderAssetIds);
+        Assert.Empty(result.ReferencedShaderDependencies);
     }
 
     /// <summary>
@@ -424,7 +430,7 @@ public sealed class PsVitaPlatformAssetBuilderTests {
         Assert.Equal("Mesh", materialAsset.VariantName);
         Assert.Equal(1u, materialAsset.ParameterContractVersion);
         Assert.Equal(0xFFFFFFFFu, materialAsset.BaseColorAbgr);
-        Assert.Equal(["ForwardSolidColorShader"], result.ReferencedShaderAssetIds);
+        Assert.Equal(["ForwardSolidColorShader"], result.ReferencedShaderDependencies.Select(dependency => dependency.ShaderAssetId));
         PlatformShaderDependency dependency = Assert.Single(result.ReferencedShaderDependencies);
         Assert.Equal("ForwardSolidColorShader", dependency.ShaderAssetId);
         Assert.Equal("ForwardSolidColorShader.vs", dependency.VertexProgramName);
@@ -558,7 +564,9 @@ public sealed class PsVitaPlatformAssetBuilderTests {
                 [],
                 [],
                 [],
-                new PlatformContainerWritePlan(string.Empty, []));
+                new PlatformContainerWritePlan(string.Empty, []),
+                Array.Empty<PlatformCookWorkItem>(),
+                PlatformBuildRuntimeFeatureManifest.Empty);
 
             PlatformBuildRequest request = new(
                 manifest,
@@ -718,7 +726,8 @@ public sealed class PsVitaPlatformAssetBuilderTests {
                         [
                             new PlatformCookWorkItemMetadata("source-asset-id", "fonts/default.hefont")
                         ])
-                ]);
+                ],
+                PlatformBuildRuntimeFeatureManifest.Empty);
 
             PlatformBuildRequest request = new(
                 manifest,
@@ -795,7 +804,9 @@ public sealed class PsVitaPlatformAssetBuilderTests {
                 [],
                 [],
                 [],
-                new PlatformContainerWritePlan(string.Empty, []));
+                new PlatformContainerWritePlan(string.Empty, []),
+                Array.Empty<PlatformCookWorkItem>(),
+                PlatformBuildRuntimeFeatureManifest.Empty);
             PlatformBuildRequest request = new(
                 manifest,
                 [new PlatformBuildTargetVariant("psvita-default", "psvita", "psvita", "debug")],

@@ -258,7 +258,7 @@ public sealed class PsVitaPlatformAssetBuilder : IPlatformAssetBuilder, IShaderB
                 ReceivesShadows = ResolveShadowFlag(request.FieldValues, ReceivesShadowsFieldId)
             };
 
-            return PlatformMaterialCookResult.CreateWithDependencies(
+            return new PlatformMaterialCookResult(
                 new PsVitaCompiledShaderMaterialBinarySerializer().Serialize(cookedAsset),
                 [new PlatformShaderDependency(
                     cookedAsset.ShaderAssetId,

@@ -16,7 +16,7 @@ public sealed class PsVitaShaderBundleCompilerTests {
     public void Cook_sharedShaderSource_writesOneBundleWithEveryMaterialLookupEntry() {
         string cookRootPath = Path.Combine(Path.GetTempPath(), "helengine-psvita-shader-bundle-tests", Guid.NewGuid().ToString("N"));
         PsVitaShaderBundleCompilerTestExchange exchange = new();
-        PlatformShaderArtifactCookRequest request = PlatformShaderArtifactCookRequest.CreateWithDependenciesAndSources(
+        PlatformShaderArtifactCookRequest request = new PlatformShaderArtifactCookRequest(
             cookRootPath,
             "psvita",
             "release",
@@ -54,7 +54,7 @@ public sealed class PsVitaShaderBundleCompilerTests {
     public void Cook_legacyForwardLambertShader_doesNotUseTheStandardShaderLowering() {
         string cookRootPath = Path.Combine(Path.GetTempPath(), "helengine-psvita-shader-bundle-tests", Guid.NewGuid().ToString("N"));
         PsVitaShaderBundleCompilerTestExchange exchange = new();
-        PlatformShaderArtifactCookRequest request = PlatformShaderArtifactCookRequest.CreateWithDependenciesAndSources(
+        PlatformShaderArtifactCookRequest request = new PlatformShaderArtifactCookRequest(
             cookRootPath,
             "psvita",
             "debug",
@@ -76,7 +76,7 @@ public sealed class PsVitaShaderBundleCompilerTests {
     public void Cook_forwardStandardShader_writesAllRuntimeShadowVariants() {
         string cookRootPath = Path.Combine(Path.GetTempPath(), "helengine-psvita-shader-bundle-tests", Guid.NewGuid().ToString("N"));
         PsVitaShaderBundleCompilerTestExchange exchange = new();
-        PlatformShaderArtifactCookRequest request = PlatformShaderArtifactCookRequest.CreateWithDependenciesAndSources(
+        PlatformShaderArtifactCookRequest request = new PlatformShaderArtifactCookRequest(
             cookRootPath,
             "psvita",
             "release",
@@ -104,7 +104,7 @@ public sealed class PsVitaShaderBundleCompilerTests {
     public void Cook_forwardStandardShader_preservesTheMaterialVariantAlongsideShadowVariants() {
         string cookRootPath = Path.Combine(Path.GetTempPath(), "helengine-psvita-shader-bundle-tests", Guid.NewGuid().ToString("N"));
         PsVitaShaderBundleCompilerTestExchange exchange = new();
-        PlatformShaderArtifactCookRequest request = PlatformShaderArtifactCookRequest.CreateWithDependenciesAndSources(
+        PlatformShaderArtifactCookRequest request = new PlatformShaderArtifactCookRequest(
             cookRootPath,
             "psvita",
             "release",
