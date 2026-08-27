@@ -39,14 +39,18 @@ public sealed class PsVitaForwardLambertSourceAuditTests {
     }
 
     /// <summary>
-    /// Verifies that the builder names the production GPU Lambert variant explicitly.
+    /// Verifies that the material builder does not retain a legacy Lambert-to-Standard conversion path.
     /// </summary>
     [Fact]
-    public void Source_whenCookingForwardLambertMaterial_containsExplicitVariantName() {
+    public void Source_whenCookingMaterial_doesNotContainLegacyLambertNormalization() {
         string builderSource = File.ReadAllText(PsVitaRepositoryPathResolver.ResolvePath("builder", "PsVitaPlatformAssetBuilder.cs"));
         string materialSource = File.ReadAllText(PsVitaRepositoryPathResolver.ResolvePath("builder", "PsVitaCompiledShaderMaterialAsset.cs"));
 
-        Assert.Contains("ForwardLambertOpaque", builderSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("LegacyForwardLambertShaderAssetId", builderSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("LegacyForwardLambertVertexProgramName", builderSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("LegacyForwardLambertPixelProgramName", builderSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("NormalizeLegacyForwardLambertMaterialReference", builderSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("ForwardLambertOpaque", builderSource, StringComparison.Ordinal);
         Assert.Contains("ParameterContractVersion", materialSource, StringComparison.Ordinal);
         Assert.DoesNotContain("VertexArtifactHash", materialSource, StringComparison.Ordinal);
         Assert.DoesNotContain("FragmentArtifactHash", materialSource, StringComparison.Ordinal);

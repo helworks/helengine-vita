@@ -61,26 +61,6 @@ public sealed class PsVitaPlatformAssetBuilder : IPlatformAssetBuilder, IShaderB
     const string ReceivesShadowsFieldId = "receives-shadows";
 
     /// <summary>
-    /// Stable engine-owned shader asset identity that uses the Vita Forward Standard Shader contract.
-    /// </summary>
-    const string ForwardStandardShaderAssetId = "ForwardStandardShader";
-
-    /// <summary>
-    /// Stable legacy engine-owned shader asset identity emitted by older Vita material definitions.
-    /// </summary>
-    const string LegacyForwardLambertShaderAssetId = "ForwardLambertShader";
-
-    /// <summary>
-    /// Legacy engine-owned vertex-program name emitted by older Vita material definitions.
-    /// </summary>
-    const string LegacyForwardLambertVertexProgramName = "VS";
-
-    /// <summary>
-    /// Legacy engine-owned pixel-program name emitted by older Vita material definitions.
-    /// </summary>
-    const string LegacyForwardLambertPixelProgramName = "PS";
-
-    /// <summary>
     /// Parameter contract version implemented by the Forward Standard Shader artifact pair.
     /// </summary>
     const uint ForwardStandardParameterContractVersion = 1u;
@@ -235,7 +215,6 @@ public sealed class PsVitaPlatformAssetBuilder : IPlatformAssetBuilder, IShaderB
             string vertexProgramName = GetRequiredFieldValue(request.FieldValues, VertexProgramFieldId);
             string pixelProgramName = GetRequiredFieldValue(request.FieldValues, PixelProgramFieldId);
             string variantName = GetRequiredFieldValue(request.FieldValues, VariantFieldId);
-            NormalizeLegacyForwardLambertMaterialReference(ref shaderAssetId, ref vertexProgramName, ref pixelProgramName, ref variantName);
             string shaderDiffuseTextureAssetId = request.FieldValues.TryGetValue(TextureFieldId, out string authoredDiffuseTextureAssetId)
                 && !string.IsNullOrWhiteSpace(authoredDiffuseTextureAssetId)
                 ? authoredDiffuseTextureAssetId
@@ -293,32 +272,6 @@ public sealed class PsVitaPlatformAssetBuilder : IPlatformAssetBuilder, IShaderB
         };
 
         return new PlatformMaterialCookResult(global::helengine.files.AssetSerializer.SerializeToBytes(materialAsset), []);
-    }
-
-    /// <summary>
-    /// Converts the one obsolete engine-owned Lambert material key into the current Standard Shader key without changing any user-authored shader mapping.
-    /// </summary>
-    /// <param name="shaderAssetId">Shader asset identity to normalize.</param>
-    /// <param name="vertexProgramName">Vertex program identity to normalize.</param>
-    /// <param name="pixelProgramName">Pixel program identity to normalize.</param>
-    /// <param name="variantName">Shader variant identity to normalize.</param>
-    static void NormalizeLegacyForwardLambertMaterialReference(
-        ref string shaderAssetId,
-        ref string vertexProgramName,
-        ref string pixelProgramName,
-        ref string variantName) {
-        if (!string.Equals(shaderAssetId, LegacyForwardLambertShaderAssetId, StringComparison.Ordinal)
-            || !string.Equals(vertexProgramName, LegacyForwardLambertVertexProgramName, StringComparison.Ordinal)
-            || !string.Equals(pixelProgramName, LegacyForwardLambertPixelProgramName, StringComparison.Ordinal)
-            || (!string.Equals(variantName, "default", StringComparison.Ordinal)
-                && !string.Equals(variantName, "ForwardLambertOpaque", StringComparison.Ordinal))) {
-            return;
-        }
-
-        shaderAssetId = ForwardStandardShaderAssetId;
-        vertexProgramName = "ForwardStandardShader.vs";
-        pixelProgramName = "ForwardStandardShader.ps";
-        variantName = "default";
     }
 
     /// <summary>
