@@ -17,6 +17,22 @@ namespace helengine.psvita.builder.tests;
 /// </summary>
 public sealed class PsVitaPlatformAssetBuilderTests {
     /// <summary>
+    /// Ensures the native PS Vita boot host receives the generated host filesystem source it references outside managed reachability analysis.
+    /// </summary>
+    [Fact]
+    public void Definition_force_enables_host_file_system_runtime_feature() {
+        PsVitaPlatformAssetBuilder builder = new();
+        PlatformCodegenProfileDefinition codegenProfile = Assert.Single(
+            builder.Definition.CodegenProfiles,
+            profile => profile.ProfileId == "default");
+        PlatformSettingDefinition enabledFeatures = Assert.Single(
+            codegenProfile.Settings,
+            setting => setting.SettingId == PlatformCodegenSettingIds.EnabledFeatures);
+
+        Assert.Equal("host_file_system", enabledFeatures.DefaultValue);
+    }
+
+    /// <summary>
     /// Verifies the builder exposes the PS Vita profiles required for editor discovery.
     /// </summary>
     [Fact]
