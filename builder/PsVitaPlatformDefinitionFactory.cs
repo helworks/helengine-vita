@@ -274,6 +274,13 @@ public static class PsVitaPlatformDefinitionFactory {
                             PlatformSettingKind.Text,
                             NativeNumericTypeRemaps,
                             true,
+                            []),
+                        new PlatformSettingDefinition(
+                            "codegen-use-rtti",
+                            "Use Compiler RTTI",
+                            PlatformSettingKind.Boolean,
+                            "true",
+                            true,
                             [])
                     ])
             ],
