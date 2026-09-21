@@ -53,7 +53,7 @@ Inspect the regenerated `assets/scenes/physics/*.helen` payloads and confirm `De
 
 - [ ] **Step 3: Build PSVita through the editor CLI**
 
-Run the existing `psvita` debug build with `HELENGINE_PSVITA_SHADER_COMPILER_EXCHANGE_ROOT=C:/dev/helprojs/demodisc/vita-shader-compiler-exchange`.
+Run the existing `psvita` debug build with `HELENGINE_PSVITA_SHADER_COMPILER_EXCHANGE_ROOT=C:/dev/helprojs/demodisc/platforms/vita/vita-shader-compiler-exchange`.
 
 - [ ] **Step 4: Verify the cooked payloads**
 
