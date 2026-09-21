@@ -288,7 +288,7 @@ public sealed class PsVitaPlatformAssetBuilderTests {
             CreateCookedSceneBytes(
                 "helengine.SpriteComponent",
                 "helengine.TextComponent",
-                "city.menu.MenuComponent, gameplay"));
+                "DemoDisc.menu.MenuComponent, DemoDisc"));
 
         string previousDirectory = Directory.GetCurrentDirectory();
         try {
@@ -364,7 +364,7 @@ public sealed class PsVitaPlatformAssetBuilderTests {
             Assert.True(File.Exists(Path.Combine(generatedCoreRoot, "PsVitaUnsupportedRuntimeComponentDeserializer.hpp")));
             Assert.True(File.Exists(Path.Combine(generatedCoreRoot, "PsVitaUnsupportedRuntimeComponentDeserializer.cpp")));
             Assert.Contains(
-                "city.menu.MenuComponent, gameplay",
+                "DemoDisc.menu.MenuComponent, DemoDisc",
                 File.ReadAllText(Path.Combine(generatedCoreRoot, "GeneratedRuntimeComponentDeserializerRegistration.cpp"), Encoding.UTF8),
                 StringComparison.Ordinal);
             Assert.Contains(
