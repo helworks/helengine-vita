@@ -42,6 +42,9 @@ public sealed class PsVitaGeneratedRuntimeComponentSupportWriter {
         "runtime/runtime_startup_manifest.cpp"
     };
 
+    const string WriterOwnershipMarker = "// HELENGINE_PS_VITA_GENERATED_RUNTIME_COMPONENT_SUPPORT";
+    const string GeneratedDeserializerManifestFileName = "psvita-generated-runtime-deserializers.manifest";
+
     /// <summary>
     /// Ensures fallback runtime component deserializer support exists for the supplied cooked scenes.
     /// </summary>
@@ -55,14 +58,16 @@ public sealed class PsVitaGeneratedRuntimeComponentSupportWriter {
         }
 
         string registrationSourcePath = Path.Combine(generatedCoreRootPath, "GeneratedRuntimeComponentDeserializerRegistration.cpp");
-        if (File.Exists(registrationSourcePath)) {
+        string generatedDeserializerManifestPath = Path.Combine(generatedCoreRootPath, GeneratedDeserializerManifestFileName);
+        bool hasWriterOwnedSupport = IsWriterOwnedRegistration(registrationSourcePath);
+        if (File.Exists(registrationSourcePath) && !hasWriterOwnedSupport) {
             return;
         }
 
         IReadOnlyList<string> componentTypeIds = CollectComponentTypeIds(cookedSceneAssetPaths);
         IReadOnlyList<Type> engineComponentTypes = ResolveRequiredEngineComponentTypes(componentTypeIds);
         IReadOnlyList<string> unsupportedScriptComponentTypeIds = ResolveUnsupportedScriptComponentTypeIds(componentTypeIds);
-        if (engineComponentTypes.Count == 0 && unsupportedScriptComponentTypeIds.Count == 0) {
+        if (engineComponentTypes.Count == 0 && unsupportedScriptComponentTypeIds.Count == 0 && !hasWriterOwnedSupport) {
             return;
         }
 
@@ -76,8 +81,22 @@ public sealed class PsVitaGeneratedRuntimeComponentSupportWriter {
             schemaBuilder,
             generator);
 
+        List<string> previouslyGeneratedClassNames = hasWriterOwnedSupport
+            ? ReadRegisteredGeneratedDeserializerClassNames(registrationSourcePath)
+            : [];
+        PruneStaleGeneratedDeserializers(
+            generatedCoreRootPath,
+            generatedDeserializerManifestPath,
+            generatedEngineDeserializerClassNames,
+            previouslyGeneratedClassNames);
+
         if (unsupportedScriptComponentTypeIds.Count > 0) {
             WriteUnsupportedRuntimePlaceholderSupportFiles(generatedCoreRootPath);
+        } else if (hasWriterOwnedSupport) {
+            DeleteIfExists(Path.Combine(generatedCoreRootPath, "PsVitaUnsupportedRuntimeComponent.hpp"));
+            DeleteIfExists(Path.Combine(generatedCoreRootPath, "PsVitaUnsupportedRuntimeComponent.cpp"));
+            DeleteIfExists(Path.Combine(generatedCoreRootPath, "PsVitaUnsupportedRuntimeComponentDeserializer.hpp"));
+            DeleteIfExists(Path.Combine(generatedCoreRootPath, "PsVitaUnsupportedRuntimeComponentDeserializer.cpp"));
         }
 
         WriteRegistrationFiles(
@@ -85,6 +104,80 @@ public sealed class PsVitaGeneratedRuntimeComponentSupportWriter {
             generatedEngineDeserializerClassNames,
             unsupportedScriptComponentTypeIds);
         RewriteUnityTranslationUnit(generatedCoreRootPath);
+    }
+
+    static bool IsWriterOwnedRegistration(string registrationSourcePath) {
+        if (!File.Exists(registrationSourcePath)) {
+            return false;
+        }
+
+        string source = File.ReadAllText(registrationSourcePath);
+        return source.Contains(WriterOwnershipMarker, StringComparison.Ordinal);
+    }
+
+    static List<string> ReadRegisteredGeneratedDeserializerClassNames(string registrationSourcePath) {
+        if (!File.Exists(registrationSourcePath)) {
+            return [];
+        }
+
+        List<string> classNames = [];
+        foreach (string line in File.ReadLines(registrationSourcePath)) {
+            const string includePrefix = "#include \"";
+            const string includeSuffix = ".hpp\"";
+            int prefixIndex = line.IndexOf(includePrefix, StringComparison.Ordinal);
+            if (prefixIndex < 0) {
+                continue;
+            }
+
+            int classNameStart = prefixIndex + includePrefix.Length;
+            int suffixIndex = line.IndexOf(includeSuffix, classNameStart, StringComparison.Ordinal);
+            if (suffixIndex <= classNameStart) {
+                continue;
+            }
+
+            string className = line[classNameStart..suffixIndex];
+            if (className.StartsWith("GeneratedRuntime", StringComparison.Ordinal)
+                && className.EndsWith("Deserializer", StringComparison.Ordinal)) {
+                classNames.Add(className);
+            }
+        }
+
+        return classNames;
+    }
+
+    static void PruneStaleGeneratedDeserializers(
+        string generatedCoreRootPath,
+        string generatedDeserializerManifestPath,
+        IReadOnlyList<string> currentGeneratedClassNames,
+        IReadOnlyList<string> previouslyGeneratedClassNames) {
+        HashSet<string> currentNames = new(currentGeneratedClassNames, StringComparer.Ordinal);
+        foreach (string previousName in previouslyGeneratedClassNames) {
+            if (string.IsNullOrWhiteSpace(previousName) || currentNames.Contains(previousName)) {
+                continue;
+            }
+
+            DeleteIfExists(Path.Combine(generatedCoreRootPath, previousName + ".cpp"));
+            DeleteIfExists(Path.Combine(generatedCoreRootPath, previousName + ".hpp"));
+        }
+
+        if (File.Exists(generatedDeserializerManifestPath)) {
+            foreach (string previousName in File.ReadAllLines(generatedDeserializerManifestPath)) {
+                if (string.IsNullOrWhiteSpace(previousName) || currentNames.Contains(previousName)) {
+                    continue;
+                }
+
+                DeleteIfExists(Path.Combine(generatedCoreRootPath, previousName + ".cpp"));
+                DeleteIfExists(Path.Combine(generatedCoreRootPath, previousName + ".hpp"));
+            }
+        }
+
+        File.WriteAllLines(generatedDeserializerManifestPath, currentGeneratedClassNames, Encoding.UTF8);
+    }
+
+    static void DeleteIfExists(string path) {
+        if (File.Exists(path)) {
+            File.Delete(path);
+        }
     }
 
     /// <summary>
@@ -228,8 +321,8 @@ public sealed class PsVitaGeneratedRuntimeComponentSupportWriter {
             }
 
             string className = generator.BuildNativeDeserializerClassName(schema);
-            File.WriteAllText(Path.Combine(generatedCoreRootPath, className + ".hpp"), generator.GenerateNativeDeserializerHeader(schema), Encoding.UTF8);
-            File.WriteAllText(Path.Combine(generatedCoreRootPath, className + ".cpp"), generator.GenerateNativeDeserializerSource(schema), Encoding.UTF8);
+            WriteIfChanged(Path.Combine(generatedCoreRootPath, className + ".hpp"), generator.GenerateNativeDeserializerHeader(schema));
+            WriteIfChanged(Path.Combine(generatedCoreRootPath, className + ".cpp"), generator.GenerateNativeDeserializerSource(schema));
             generatedClassNames.Add(className);
         }
 
@@ -245,10 +338,10 @@ public sealed class PsVitaGeneratedRuntimeComponentSupportWriter {
             throw new ArgumentException("Generated core root path must be provided.", nameof(generatedCoreRootPath));
         }
 
-        File.WriteAllText(Path.Combine(generatedCoreRootPath, "PsVitaUnsupportedRuntimeComponent.hpp"), BuildUnsupportedRuntimeComponentHeader(), Encoding.UTF8);
-        File.WriteAllText(Path.Combine(generatedCoreRootPath, "PsVitaUnsupportedRuntimeComponent.cpp"), BuildUnsupportedRuntimeComponentSource(), Encoding.UTF8);
-        File.WriteAllText(Path.Combine(generatedCoreRootPath, "PsVitaUnsupportedRuntimeComponentDeserializer.hpp"), BuildUnsupportedRuntimeComponentDeserializerHeader(), Encoding.UTF8);
-        File.WriteAllText(Path.Combine(generatedCoreRootPath, "PsVitaUnsupportedRuntimeComponentDeserializer.cpp"), BuildUnsupportedRuntimeComponentDeserializerSource(), Encoding.UTF8);
+        WriteIfChanged(Path.Combine(generatedCoreRootPath, "PsVitaUnsupportedRuntimeComponent.hpp"), BuildUnsupportedRuntimeComponentHeader());
+        WriteIfChanged(Path.Combine(generatedCoreRootPath, "PsVitaUnsupportedRuntimeComponent.cpp"), BuildUnsupportedRuntimeComponentSource());
+        WriteIfChanged(Path.Combine(generatedCoreRootPath, "PsVitaUnsupportedRuntimeComponentDeserializer.hpp"), BuildUnsupportedRuntimeComponentDeserializerHeader());
+        WriteIfChanged(Path.Combine(generatedCoreRootPath, "PsVitaUnsupportedRuntimeComponentDeserializer.cpp"), BuildUnsupportedRuntimeComponentDeserializerSource());
     }
 
     /// <summary>
@@ -269,11 +362,10 @@ public sealed class PsVitaGeneratedRuntimeComponentSupportWriter {
             throw new ArgumentNullException(nameof(unsupportedScriptComponentTypeIds));
         }
 
-        File.WriteAllText(Path.Combine(generatedCoreRootPath, "GeneratedRuntimeComponentDeserializerRegistration.hpp"), BuildRegistrationHeader(), Encoding.UTF8);
-        File.WriteAllText(
+        WriteIfChanged(Path.Combine(generatedCoreRootPath, "GeneratedRuntimeComponentDeserializerRegistration.hpp"), BuildRegistrationHeader());
+        WriteIfChanged(
             Path.Combine(generatedCoreRootPath, "GeneratedRuntimeComponentDeserializerRegistration.cpp"),
-            BuildRegistrationSource(engineDeserializerClassNames, unsupportedScriptComponentTypeIds),
-            Encoding.UTF8);
+            BuildRegistrationSource(engineDeserializerClassNames, unsupportedScriptComponentTypeIds));
     }
 
     /// <summary>
@@ -303,7 +395,15 @@ public sealed class PsVitaGeneratedRuntimeComponentSupportWriter {
             builder.AppendLine("#include \"" + relativeSourcePaths[sourceIndex] + "\"");
         }
 
-        File.WriteAllText(Path.Combine(generatedCoreRootPath, "helengine_core_unity.cpp"), builder.ToString(), Encoding.UTF8);
+        WriteIfChanged(Path.Combine(generatedCoreRootPath, "helengine_core_unity.cpp"), builder.ToString());
+    }
+
+    static void WriteIfChanged(string path, string content) {
+        if (File.Exists(path) && string.Equals(File.ReadAllText(path), content, StringComparison.Ordinal)) {
+            return;
+        }
+
+        File.WriteAllText(path, content, Encoding.UTF8);
     }
 
     /// <summary>
@@ -329,6 +429,7 @@ public sealed class PsVitaGeneratedRuntimeComponentSupportWriter {
         IReadOnlyList<string> engineDeserializerClassNames,
         IReadOnlyList<string> unsupportedScriptComponentTypeIds) {
         StringBuilder builder = new();
+        builder.AppendLine(WriterOwnershipMarker);
         builder.AppendLine("#ifdef DrawText");
         builder.AppendLine("#undef DrawText");
         builder.AppendLine("#endif");

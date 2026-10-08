@@ -14,7 +14,7 @@ public sealed class PsVitaCMakeSourceAuditTests {
         string cmakePath = PsVitaRepositoryPathResolver.ResolvePath("CMakeLists.txt");
         string cmakeSource = File.ReadAllText(cmakePath);
 
-        Assert.Contains("file(GLOB_RECURSE HELENGINE_PSVITA_COOKED_FILES", cmakeSource, StringComparison.Ordinal);
+        Assert.Contains("file(GLOB_RECURSE HELENGINE_PSVITA_COOKED_FILES CONFIGURE_DEPENDS", cmakeSource, StringComparison.Ordinal);
         Assert.Contains("list(APPEND HELENGINE_PSVITA_VPK_FILE_ARGS", cmakeSource, StringComparison.Ordinal);
         Assert.Contains("${HELENGINE_PSVITA_VPK_FILE_ARGS}", cmakeSource, StringComparison.Ordinal);
     }

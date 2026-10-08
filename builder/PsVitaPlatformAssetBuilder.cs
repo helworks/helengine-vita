@@ -340,6 +340,9 @@ public sealed class PsVitaPlatformAssetBuilder : IPlatformAssetBuilder, IShaderB
                     "Running native PS Vita build."));
 
                 string nativeBuildRoot = Path.Combine(request.WorkingRoot, "native");
+                string nativeObjectCacheRoot = string.IsNullOrWhiteSpace(request.NativeObjectCacheRoot)
+                    ? Path.Combine(nativeBuildRoot, "native-cache")
+                    : request.NativeObjectCacheRoot;
                 string generatedCoreRoot = ResolveGeneratedCoreRoot(request);
                 Directory.CreateDirectory(generatedCoreRoot);
                 GeneratedRuntimeComponentSupportWriter.EnsureGeneratedRuntimeSupport(
@@ -354,7 +357,8 @@ public sealed class PsVitaPlatformAssetBuilder : IPlatformAssetBuilder, IShaderB
                     request.SelectedBuildOptionValues != null
                         && request.SelectedBuildOptionValues.TryGetValue("game-name", out string authoredGameName)
                         ? authoredGameName
-                        : string.Empty);
+                        : string.Empty,
+                    nativeObjectCacheRoot);
                 string outputVpkPath = Path.Combine(request.OutputRoot, Path.GetFileName(nativeVpkPath));
                 File.Copy(nativeVpkPath, outputVpkPath, true);
                 nativeBuildSucceeded = true;

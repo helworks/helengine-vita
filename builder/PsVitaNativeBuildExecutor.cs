@@ -21,8 +21,9 @@ public sealed class PsVitaNativeBuildExecutor : IPsVitaNativeBuildExecutor {
     /// <param name="stagedContentRootPath">Absolute staged cooked-content root supplied by the builder.</param>
     /// <param name="cancellationToken">Cancellation token that can stop the native build.</param>
     /// <param name="gameTitle">Editor-authored app name stamped into the VPK metadata; empty keeps the toolchain default.</param>
+    /// <param name="nativeObjectCacheRoot">Persistent project/profile native build cache root; an empty value uses the invocation scratch area.</param>
     /// <returns>Absolute path to the produced VPK.</returns>
-    public string Build(string repositoryRoot, string nativeBuildRoot, string generatedCoreCppRootPath, string stagedContentRootPath, CancellationToken cancellationToken, string gameTitle = "") {
+    public string Build(string repositoryRoot, string nativeBuildRoot, string generatedCoreCppRootPath, string stagedContentRootPath, CancellationToken cancellationToken, string gameTitle = "", string nativeObjectCacheRoot = "") {
         if (string.IsNullOrWhiteSpace(repositoryRoot)) {
             throw new ArgumentException("Repository root must be provided.", nameof(repositoryRoot));
         } else if (string.IsNullOrWhiteSpace(nativeBuildRoot)) {
@@ -36,6 +37,21 @@ public sealed class PsVitaNativeBuildExecutor : IPsVitaNativeBuildExecutor {
         Directory.CreateDirectory(nativeBuildRoot);
         Directory.CreateDirectory(generatedCoreCppRootPath);
         Directory.CreateDirectory(stagedContentRootPath);
+        string resolvedNativeObjectCacheRoot = string.IsNullOrWhiteSpace(nativeObjectCacheRoot)
+            ? Path.Combine(nativeBuildRoot, "native-cache")
+            : Path.GetFullPath(nativeObjectCacheRoot);
+        string resolvedNativeBuildRoot = Path.GetFullPath(nativeBuildRoot);
+        string packageRoot = Path.GetFullPath(Path.Combine(resolvedNativeBuildRoot, "package-output"));
+        string nativeBuildRootPrefix = resolvedNativeBuildRoot.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+            + Path.DirectorySeparatorChar;
+        if (!packageRoot.StartsWith(nativeBuildRootPrefix, StringComparison.OrdinalIgnoreCase)) {
+            throw new InvalidOperationException($"PS Vita package staging path escaped the native build root: '{packageRoot}'.");
+        }
+        Directory.CreateDirectory(resolvedNativeObjectCacheRoot);
+        if (Directory.Exists(packageRoot)) {
+            Directory.Delete(packageRoot, true);
+        }
+        Directory.CreateDirectory(packageRoot);
 
         RunProcess(
             "docker",
@@ -46,30 +62,12 @@ public sealed class PsVitaNativeBuildExecutor : IPsVitaNativeBuildExecutor {
 
         RunProcess(
             "docker",
-            [
-                "run",
-                "--rm",
-                "-v",
-                $"{repositoryRoot}:/workspace",
-                "-v",
-                $"{generatedCoreCppRootPath}:/generated-core",
-                "-v",
-                $"{stagedContentRootPath}:/workspace/cooked",
-                "-w",
-                "/workspace",
-                "-e",
-                "HELENGINE_CORE_CPP_ROOT=/generated-core",
-                DockerImageTag,
-                "make",
-                "clean",
-                "all",
-                "HELENGINE_PSVITA_GAME_TITLE=" + (string.IsNullOrWhiteSpace(gameTitle) ? string.Empty : gameTitle.Replace("\"", string.Empty).Trim())
-            ],
+            CreateNativeBuildArguments(repositoryRoot, generatedCoreCppRootPath, stagedContentRootPath, resolvedNativeObjectCacheRoot, packageRoot, gameTitle),
             repositoryRoot,
             Path.Combine(nativeBuildRoot, "docker-run.log"),
             cancellationToken);
 
-        string sourceVpkPath = Path.Combine(repositoryRoot, "build", "helengine_psvita.vpk");
+        string sourceVpkPath = Path.Combine(packageRoot, "helengine_psvita.vpk");
         if (!File.Exists(sourceVpkPath)) {
             throw new InvalidOperationException($"Native PS Vita build completed, but no VPK was produced at '{sourceVpkPath}'.");
         }
@@ -77,6 +75,51 @@ public sealed class PsVitaNativeBuildExecutor : IPsVitaNativeBuildExecutor {
         string destinationVpkPath = Path.Combine(nativeBuildRoot, "helengine_psvita.vpk");
         File.Copy(sourceVpkPath, destinationVpkPath, true);
         return destinationVpkPath;
+    }
+
+    /// <summary>
+    /// Creates the Docker command arguments for one cached native build with separate package staging.
+    /// </summary>
+    /// <param name="repositoryRoot">Absolute PS Vita repository root.</param>
+    /// <param name="generatedCoreCppRootPath">Stable generated-core source root.</param>
+    /// <param name="stagedContentRootPath">Fresh cooked-content root for the current build.</param>
+    /// <param name="nativeObjectCacheRoot">Persistent project/profile CMake and object root.</param>
+    /// <param name="packageRoot">Fresh package-output directory for this build.</param>
+    /// <param name="gameTitle">Optional editor-authored VPK title.</param>
+    /// <returns>Ordered Docker command arguments.</returns>
+    public static IReadOnlyList<string> CreateNativeBuildArguments(
+        string repositoryRoot,
+        string generatedCoreCppRootPath,
+        string stagedContentRootPath,
+        string nativeObjectCacheRoot,
+        string packageRoot,
+        string gameTitle) {
+        return [
+            "run",
+            "--rm",
+            "-v",
+            $"{repositoryRoot}:/workspace",
+            "-v",
+            $"{generatedCoreCppRootPath}:/generated-core",
+            "-v",
+            $"{stagedContentRootPath}:/workspace/cooked",
+            "-v",
+            $"{nativeObjectCacheRoot}:/native-cache",
+            "-v",
+            $"{packageRoot}:/package-output",
+            "-w",
+            "/workspace",
+            "-e",
+            "HELENGINE_CORE_CPP_ROOT=/generated-core",
+            DockerImageTag,
+            "make",
+            "all",
+            "NATIVE_OBJECT_CACHE_ROOT=/native-cache",
+            "BUILD_DIR=/native-cache",
+            "PACKAGE_DIR=/package-output",
+            "SOURCE_DIR=/workspace",
+            "HELENGINE_PSVITA_GAME_TITLE=" + (string.IsNullOrWhiteSpace(gameTitle) ? string.Empty : gameTitle.Replace("\"", string.Empty).Trim())
+        ];
     }
 
     /// <summary>

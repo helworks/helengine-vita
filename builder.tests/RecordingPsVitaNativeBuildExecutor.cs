@@ -28,6 +28,11 @@ sealed class RecordingPsVitaNativeBuildExecutor : IPsVitaNativeBuildExecutor {
     public string StagedContentRootPath { get; private set; }
 
     /// <summary>
+    /// Gets the native object cache root that the builder passed into the native build executor.
+    /// </summary>
+    public string NativeObjectCacheRootPath { get; private set; }
+
+    /// <summary>
     /// Records the native build invocation and writes a fake VPK artifact.
     /// </summary>
     /// <param name="repositoryRoot">Repository root supplied by the builder.</param>
@@ -37,11 +42,12 @@ sealed class RecordingPsVitaNativeBuildExecutor : IPsVitaNativeBuildExecutor {
     /// <param name="cancellationToken">Cancellation token supplied by the builder.</param>
     /// <param name="gameTitle">Game title supplied by the builder.</param>
     /// <returns>Path to the fake VPK artifact.</returns>
-    public string Build(string repositoryRoot, string nativeBuildRoot, string generatedCoreCppRootPath, string stagedContentRootPath, CancellationToken cancellationToken, string gameTitle = "") {
+    public string Build(string repositoryRoot, string nativeBuildRoot, string generatedCoreCppRootPath, string stagedContentRootPath, CancellationToken cancellationToken, string gameTitle = "", string nativeObjectCacheRoot = "") {
         WasCalled = true;
         RepositoryRootPath = repositoryRoot;
         GeneratedCoreRootPath = generatedCoreCppRootPath;
         StagedContentRootPath = stagedContentRootPath;
+        NativeObjectCacheRootPath = nativeObjectCacheRoot;
         Assert.True(Directory.Exists(repositoryRoot));
         Assert.True(Directory.Exists(generatedCoreCppRootPath));
         Assert.True(Directory.Exists(stagedContentRootPath));

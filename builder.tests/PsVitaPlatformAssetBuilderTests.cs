@@ -147,7 +147,9 @@ public sealed class PsVitaPlatformAssetBuilderTests {
                 new Dictionary<string, string>(),
                 generatedCoreRoot,
                 "psvita-memory-card",
-                "vpk-package");
+                "vpk-package",
+                "release",
+                Path.Combine(workingRoot, "cache", "build", "psvita", "debug", "native"));
 
             RecordingPsVitaNativeBuildExecutor nativeBuildExecutor = new();
             PsVitaPlatformAssetBuilder builder = new(nativeBuildExecutor);
@@ -162,6 +164,9 @@ public sealed class PsVitaPlatformAssetBuilderTests {
             Assert.Equal(
                 PsVitaRepositoryPathResolver.ResolveRepositoryRoot(),
                 nativeBuildExecutor.RepositoryRootPath);
+            Assert.Equal(
+                Path.Combine(workingRoot, "cache", "build", "psvita", "debug", "native"),
+                nativeBuildExecutor.NativeObjectCacheRootPath);
             Assert.True(File.Exists(Path.Combine(outputRoot, "cooked", "scenes", "startup.hasset")));
             Assert.True(File.Exists(Path.Combine(nativeBuildExecutor.StagedContentRootPath, "scenes", "startup.hasset")));
             Assert.False(File.Exists(Path.Combine(nativeBuildExecutor.StagedContentRootPath, "cooked", "scenes", "startup.hasset")));
