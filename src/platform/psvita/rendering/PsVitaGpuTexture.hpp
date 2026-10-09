@@ -3,10 +3,12 @@
 #if HELENGINE_PSVITA_HAS_GENERATED_CORE
 
 #include <cstdint>
+#include <memory>
 
 struct vita2d_texture;
 
 namespace helengine::psvita::rendering {
+    class PsVitaNativeTextureUpload;
     /// Stores one native PS Vita GPU texture allocation that backs one runtime texture inside the GPU-backed 2D renderer.
     class PsVitaGpuTexture final {
     public:
@@ -31,6 +33,9 @@ namespace helengine::psvita::rendering {
         /// Attaches one uploaded native PS Vita texture allocation to this runtime texture wrapper.
         void SetNativeTexture(vita2d_texture* nativeTexture, std::uint32_t width, std::uint32_t height);
 
+        /// Attaches a mapped native upload without passing its descriptor to vita2d's allocator-specific free routine.
+        void SetNativeUpload(std::unique_ptr<PsVitaNativeTextureUpload>&& upload, std::uint32_t width, std::uint32_t height);
+
     private:
         /// Stores the owned native PS Vita texture allocation.
         vita2d_texture* NativeTexture;
@@ -43,6 +48,9 @@ namespace helengine::psvita::rendering {
 
         /// Stores whether the texture has entered the uploaded state.
         bool Uploaded;
+
+        /// Owns mapped native-format allocations when this texture bypasses the legacy vita2d allocator.
+        std::unique_ptr<PsVitaNativeTextureUpload> NativeUpload;
     };
 }
 

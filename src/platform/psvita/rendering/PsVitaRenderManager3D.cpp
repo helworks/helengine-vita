@@ -27,8 +27,11 @@
 #include "ModelAssetIndexData.hpp"
 #include "ObjectManager.hpp"
 #include "RuntimeMaterial.hpp"
+#if HE_CPP_FEATURE_SHADERS
 #include "ShaderMaterialAsset.hpp"
 #include "ShaderMaterialAssetBinarySerializer.hpp"
+#include "MaterialConstantBufferAsset.hpp"
+#endif
 #include "platform/psvita/rendering/PsVitaGxmRenderer.hpp"
 #include "platform/psvita/rendering/PsVitaCompiledShaderMaterialReader.hpp"
 #include "platform/psvita/rendering/PsVitaCompiledShaderRuntimeMaterial.hpp"
@@ -42,8 +45,6 @@
 #include "runtime/native_exceptions.hpp"
 #include "runtime/native_string.hpp"
 #include "system/io/file.hpp"
-
-#include "MaterialConstantBufferAsset.hpp"
 
 namespace {
     constexpr int PsVitaScreenWidth = 960;
@@ -266,6 +267,7 @@ namespace helengine::psvita {
         ::Asset* asset = nullptr;
         try {
             stream = ::File::OpenRead(cookedAssetPath);
+#if HE_CPP_FEATURE_SHADERS
             header = ::EngineBinaryHeaderSerializer::Read(stream);
             if (header->FormatId == ::ShaderMaterialAssetBinarySerializer::FormatId) {
                 ::ShaderMaterialAsset* cookedShaderMaterialAsset = ::ShaderMaterialAssetBinarySerializer::Deserialize(stream, header);
@@ -278,6 +280,12 @@ namespace helengine::psvita {
                 delete cookedShaderMaterialAsset;
                 return runtimeMaterial;
             }
+            // AssetSerializer owns its own header read; a generic shader probe
+            // must not leave classic MaterialAsset deserialization after it.
+            delete header;
+            header = nullptr;
+            stream->SetPosition(0);
+#endif
 
             asset = ::AssetSerializer::Deserialize(stream);
             header = nullptr;
@@ -309,6 +317,7 @@ namespace helengine::psvita {
     }
 
     /// Loads and attaches the packaged diffuse texture referenced by one shader material.
+#if HE_CPP_FEATURE_SHADERS
     void PsVitaRenderManager3D::AttachDiffuseTexture(::RuntimeMaterial* runtimeMaterial, ::ShaderMaterialAsset* materialAsset, const std::string& cookedAssetPath, IContentStreamSource* contentStreamSource) {
         if (runtimeMaterial == nullptr || materialAsset == nullptr || materialAsset->DiffuseTextureAssetId.empty() || Core::Instance == nullptr || Core::Instance->RenderManager2D == nullptr) {
             return;
@@ -323,6 +332,7 @@ namespace helengine::psvita {
         ::RuntimeTexture* runtimeTexture = Core::Instance->RenderManager2D->BuildTextureFromCooked(cookedTexturePath, contentStreamSource);
         runtimeMaterial->SetPrimaryTexture(runtimeTexture);
     }
+#endif
 
     /// Builds one concrete runtime material from one deserialized material asset payload.
     ::RuntimeMaterial* PsVitaRenderManager3D::BuildMaterialFromCooked(::MaterialAsset* materialAsset) {
@@ -340,6 +350,7 @@ namespace helengine::psvita {
     }
 
     /// Builds one concrete runtime material from one deserialized shader material asset payload.
+#if HE_CPP_FEATURE_SHADERS
     ::RuntimeMaterial* PsVitaRenderManager3D::BuildMaterialFromCooked(::ShaderMaterialAsset* materialAsset) {
         if (materialAsset == nullptr) {
             throw new ArgumentNullException("materialAsset");
@@ -358,6 +369,7 @@ namespace helengine::psvita {
         runtimeMaterial->SetBaseColorAbgr(ResolveCookedMaterialBaseColorAbgr(materialAsset));
         return runtimeMaterial;
     }
+#endif
 
     /// Builds one Vita-specific runtime material from one cooked compiled-shader material payload.
     ::RuntimeMaterial* PsVitaRenderManager3D::BuildCompiledShaderRuntimeMaterial(const rendering::PsVitaCompiledShaderMaterial& materialAsset) {
@@ -889,6 +901,7 @@ namespace helengine::psvita {
     }
 
     /// Resolves one cooked standard-material base-color constant buffer into packed Vita color.
+#if HE_CPP_FEATURE_SHADERS
     std::uint32_t PsVitaRenderManager3D::ResolveCookedMaterialBaseColorAbgr(::ShaderMaterialAsset* materialAsset) {
         if (materialAsset == nullptr) {
             throw new ArgumentNullException("materialAsset");
@@ -917,6 +930,7 @@ namespace helengine::psvita {
 
         return 0xFFFFFFFFu;
     }
+#endif
 
     /// Copies one runtime submesh array from the raw model asset into PS Vita-owned submesh objects.
     Array<rendering::PsVitaRuntimeSubmesh*>* PsVitaRenderManager3D::BuildRuntimeSubmeshes(::ModelAsset* data, const std::vector<std::uint32_t>& resolvedIndices) {

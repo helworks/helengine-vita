@@ -9,6 +9,8 @@
 #include <vita2d.h>
 
 #include "TextureAsset.hpp"
+#include "TextureAssetColorFormat.hpp"
+#include "TextureAssetPixelCodec.hpp"
 #include "platform/psvita/rendering/PsVitaGpuTexture.hpp"
 #include "platform/psvita/rendering/PsVitaRuntimeTexture.hpp"
 
@@ -91,6 +93,9 @@ namespace helengine::psvita::rendering {
 
     /// Releases one PS Vita runtime texture and removes any matching cache entry.
     void PsVitaTextureCache::ReleaseTexture(PsVitaRuntimeTexture* texture) {
+        if (IsPendingRelease(texture)) {
+            return;
+        }
         if (texture == nullptr) {
             throw std::invalid_argument("PS Vita runtime texture release requires one texture instance.");
         }
@@ -241,9 +246,48 @@ namespace helengine::psvita::rendering {
             throw std::invalid_argument("PS Vita runtime texture colors are required.");
         }
 
+        if (data->Width == 0 || data->Height == 0 || data->Width > 4096 || data->Height > 4096) {
+            throw std::invalid_argument("PS Vita texture dimensions must be within 1..4096 pixels.");
+        }
         int width = static_cast<int>(data->Width);
         int height = static_cast<int>(data->Height);
         int pixelCount = width * height;
+
+        if (data->ColorFormat == TextureAssetColorFormat::VitaNative) {
+            PsVitaNativeTextureLayout layout;
+            const std::size_t paletteLength = data->PaletteColors == nullptr ? 0u
+                : static_cast<std::size_t>(data->PaletteColors->Length);
+            const auto* palette = data->PaletteColors == nullptr ? nullptr : data->PaletteColors->Data;
+            if (data->Colors->Length < 0 || (data->PaletteColors != nullptr && data->PaletteColors->Length < 0)
+                || !TryParseNativeTexturePayload(data->Colors->Data, static_cast<std::size_t>(data->Colors->Length),
+                    palette, paletteLength, layout)
+                || layout.Width != data->Width || layout.Height != data->Height
+                || layout.AlphaPrecision != static_cast<std::uint32_t>(data->AlphaPrecision)) {
+                throw std::invalid_argument("PS Vita native texture payload or metadata is invalid.");
+            }
+            std::vector<std::uint8_t> nativePixels(data->Colors->Data + 64u,
+                data->Colors->Data + data->Colors->Length);
+            std::vector<std::uint8_t> nativePalette;
+            if (paletteLength != 0) {
+                nativePalette.assign(palette, palette + paletteLength);
+            }
+            auto texture = std::make_unique<PsVitaRuntimeTexture>();
+            texture->set_Id(data->get_Id());
+            texture->SetRuntimeAssetId(data->get_RuntimeAssetId());
+            texture->set_Width(width);
+            texture->set_Height(height);
+            texture->SetNativePayload(layout, std::move(nativePixels), std::move(nativePalette));
+            return texture.release();
+        }
+
+        // Retain the legacy RGBA path verbatim, including anonymous font-atlas
+        // coverage bytes whose metadata may use the default Opaque enum value.
+        std::unique_ptr<Array<std::uint8_t>> decoded;
+        auto* colors = data->Colors;
+        if (data->ColorFormat != TextureAssetColorFormat::Rgba32) {
+            decoded.reset(TextureAssetPixelCodec::DecodeToRgba32(data));
+            colors = decoded.get();
+        }
         AppendTextureTrace("TextureCache: metadata width=" + std::to_string(width)
             + " height=" + std::to_string(height)
             + " colorsLength=" + std::to_string(data->Colors->Length));
@@ -253,7 +297,7 @@ namespace helengine::psvita::rendering {
 
         int expectedColorLength = GetExpectedColorLength(pixelCount);
         AppendTextureTrace("TextureCache: expectedColorLength=" + std::to_string(expectedColorLength));
-        if (data->Colors->Length != expectedColorLength) {
+        if (colors == nullptr || colors->Data == nullptr || colors->Length != expectedColorLength) {
             throw std::invalid_argument("PS Vita runtime texture color payload length did not match the authored dimensions.");
         }
 
@@ -262,10 +306,10 @@ namespace helengine::psvita::rendering {
         for (int pixelIndex = 0; pixelIndex < pixelCount; ++pixelIndex) {
             int colorOffset = pixelIndex * 4;
             pixelsAbgr8888[static_cast<std::size_t>(pixelIndex)] = PackRgbaToAbgr(
-                (*data->Colors)[colorOffset],
-                (*data->Colors)[colorOffset + 1],
-                (*data->Colors)[colorOffset + 2],
-                (*data->Colors)[colorOffset + 3]);
+                (*colors)[colorOffset],
+                (*colors)[colorOffset + 1],
+                (*colors)[colorOffset + 2],
+                (*colors)[colorOffset + 3]);
         }
 
         PsVitaRuntimeTexture* runtimeTexture = new PsVitaRuntimeTexture();
@@ -279,6 +323,15 @@ namespace helengine::psvita::rendering {
             + " id="
             + runtimeTexture->get_Id());
         return runtimeTexture;
+    }
+
+    bool PsVitaTextureCache::IsPendingRelease(const PsVitaRuntimeTexture* texture) const {
+        for (const auto& entry : ReleasedGpuTextures) {
+            if (entry.RuntimeTexture == texture) {
+                return true;
+            }
+        }
+        return false;
     }
 }
 

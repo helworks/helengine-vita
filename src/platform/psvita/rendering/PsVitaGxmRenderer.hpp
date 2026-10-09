@@ -43,6 +43,12 @@ namespace helengine::psvita::rendering {
         /// Gets whether the renderer has completed its initialization path.
         bool IsInitialized() const;
 
+        /// Gets whether the main framebuffer scene is open and must be submitted before an in-place texture update.
+        bool IsMainFrameBegun() const;
+
+        /// Gets whether the synchronous offscreen shadow pass is active rather than the main framebuffer scene.
+        bool IsShadowDepthPassActive() const;
+
         /// Begins one new frame and records the requested clear color for later native submission.
         void BeginFrame(std::uint32_t clearColorAbgr);
 

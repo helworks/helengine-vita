@@ -311,23 +311,35 @@ public sealed class PsVitaPlatformAssetBuilder : IPlatformAssetBuilder, IShaderB
             throw new ArgumentNullException(nameof(diagnosticReporter));
         }
 
-        ResetDirectoryIfPresent(request.OutputRoot);
-        ResetDirectoryIfPresent(request.WorkingRoot);
-        Directory.CreateDirectory(request.OutputRoot);
-        Directory.CreateDirectory(request.WorkingRoot);
-
         List<PlatformBuildDiagnostic> diagnostics = [];
         List<PlatformBuildItemOutcome> sceneOutcomes = [];
         List<PlatformBuildItemOutcome> looseAssetOutcomes = [];
         string stagedContentRootPath = Path.Combine(request.WorkingRoot, "staged-content");
+        IReadOnlyList<PsVitaPreparedPayload> prepared = PreparePackagedPayloads(request, stagedContentRootPath, diagnostics, diagnosticReporter, cancellationToken);
+        if (diagnostics.Count > 0) return Task.FromResult(new PlatformBuildReport(false, [.. diagnostics],
+            request.Manifest.Scenes.Select(scene => new PlatformBuildItemOutcome(scene.SceneId, PlatformBuildItemOutcomeKind.Failed)).ToArray(),
+            request.Manifest.LooseAssets.Select(asset => new PlatformBuildItemOutcome(asset.AssetId, PlatformBuildItemOutcomeKind.Failed)).ToArray()));
+        cancellationToken.ThrowIfCancellationRequested();
+
+        ResetDirectoryIfPresent(request.OutputRoot);
+        ResetDirectoryIfPresent(request.WorkingRoot);
+        Directory.CreateDirectory(request.OutputRoot);
         Directory.CreateDirectory(stagedContentRootPath);
+        foreach (PsVitaPreparedPayload payload in prepared) {
+            WriteFile(payload.Bytes, PsVitaTextureCookPath.Resolve(request.OutputRoot, payload.OutputRelativePath));
+            WriteFile(payload.Bytes, PsVitaTextureCookPath.Resolve(stagedContentRootPath, payload.StagedRelativePath));
+        }
 
         int totalItems = request.Manifest.Scenes.Length + request.Manifest.LooseAssets.Length + 1;
         int completedItems = 0;
-
-        StageScenes(request, stagedContentRootPath, diagnostics, diagnosticReporter, progressReporter, sceneOutcomes, ref completedItems, totalItems, cancellationToken);
-        StageLooseAssets(request, stagedContentRootPath, diagnostics, diagnosticReporter, progressReporter, looseAssetOutcomes, ref completedItems, totalItems, cancellationToken);
-        ExecutePlatformCookWorkItems(request, request.OutputRoot, stagedContentRootPath, diagnostics, diagnosticReporter, progressReporter, cancellationToken);
+        foreach (PlatformBuildScene scene in request.Manifest.Scenes) {
+            sceneOutcomes.Add(new PlatformBuildItemOutcome(scene.SceneId, PlatformBuildItemOutcomeKind.Succeeded));
+            progressReporter.Report(new PlatformBuildProgressUpdate("Stage Payloads", scene.SceneId, ++completedItems, totalItems, $"Staged scene '{scene.SceneName}'."));
+        }
+        foreach (PlatformBuildAsset asset in request.Manifest.LooseAssets) {
+            looseAssetOutcomes.Add(new PlatformBuildItemOutcome(asset.AssetId, PlatformBuildItemOutcomeKind.Succeeded));
+            progressReporter.Report(new PlatformBuildProgressUpdate("Stage Payloads", asset.AssetId, ++completedItems, totalItems, $"Staged asset '{asset.AssetName}'."));
+        }
 
         bool nativeBuildSucceeded = false;
         if (diagnostics.Count == 0) {
@@ -394,150 +406,96 @@ public sealed class PsVitaPlatformAssetBuilder : IPlatformAssetBuilder, IShaderB
             [.. looseAssetOutcomes]));
     }
 
-    /// <summary>
-    /// Stages all resolved scenes into the PS Vita output and staged content roots.
-    /// </summary>
-    static void StageScenes(
-        PlatformBuildRequest request,
-        string stagedContentRootPath,
-        List<PlatformBuildDiagnostic> diagnostics,
-        IPlatformBuildDiagnosticReporter diagnosticReporter,
-        IPlatformBuildProgressReporter progressReporter,
-        List<PlatformBuildItemOutcome> sceneOutcomes,
-        ref int completedItems,
-        int totalItems,
-        CancellationToken cancellationToken) {
-        for (int sceneIndex = 0; sceneIndex < request.Manifest.Scenes.Length; sceneIndex++) {
-            cancellationToken.ThrowIfCancellationRequested();
-            PlatformBuildScene scene = request.Manifest.Scenes[sceneIndex];
-            bool copied = StageScenePayloads(scene, request.OutputRoot, stagedContentRootPath, diagnostics, diagnosticReporter);
-            sceneOutcomes.Add(new PlatformBuildItemOutcome(
-                scene.SceneId,
-                copied ? PlatformBuildItemOutcomeKind.Succeeded : PlatformBuildItemOutcomeKind.Failed));
-            completedItems++;
-            progressReporter.Report(new PlatformBuildProgressUpdate(
-                "Stage Payloads",
-                scene.SceneId,
-                completedItems,
-                totalItems,
-                copied ? $"Staged scene '{scene.SceneName}'." : $"Failed to stage scene '{scene.SceneName}'."));
-        }
-    }
-
-    /// <summary>
-    /// Stages all resolved loose assets into the PS Vita output and staged content roots.
-    /// </summary>
-    static void StageLooseAssets(
-        PlatformBuildRequest request,
-        string stagedContentRootPath,
-        List<PlatformBuildDiagnostic> diagnostics,
-        IPlatformBuildDiagnosticReporter diagnosticReporter,
-        IPlatformBuildProgressReporter progressReporter,
-        List<PlatformBuildItemOutcome> looseAssetOutcomes,
-        ref int completedItems,
-        int totalItems,
-        CancellationToken cancellationToken) {
-        for (int assetIndex = 0; assetIndex < request.Manifest.LooseAssets.Length; assetIndex++) {
-            cancellationToken.ThrowIfCancellationRequested();
-            PlatformBuildAsset asset = request.Manifest.LooseAssets[assetIndex];
-            StagePayload(asset.AssetId, asset.SourceIdentity, request.OutputRoot, stagedContentRootPath, diagnostics, diagnosticReporter, out bool copied);
-            looseAssetOutcomes.Add(new PlatformBuildItemOutcome(
-                asset.AssetId,
-                copied ? PlatformBuildItemOutcomeKind.Succeeded : PlatformBuildItemOutcomeKind.Failed));
-            completedItems++;
-            progressReporter.Report(new PlatformBuildProgressUpdate(
-                "Stage Payloads",
-                asset.AssetId,
-                completedItems,
-                totalItems,
-                copied ? $"Staged asset '{asset.AssetName}'." : $"Failed to stage asset '{asset.AssetName}'."));
-        }
-    }
-
-    /// <summary>
-    /// Stages the scene source payload plus any editor-provided cooked payload references required by the runtime scene.
-    /// </summary>
-    static bool StageScenePayloads(
-        PlatformBuildScene scene,
-        string outputRoot,
-        string stagedContentRootPath,
-        List<PlatformBuildDiagnostic> diagnostics,
-        IPlatformBuildDiagnosticReporter diagnosticReporter) {
-        if (scene == null) {
-            throw new ArgumentNullException(nameof(scene));
-        }
-
-        HashSet<string> stagedSourceIdentities = new(StringComparer.OrdinalIgnoreCase);
-        List<string> sourceIdentities = [];
-        if (!string.IsNullOrWhiteSpace(scene.SourceIdentity)) {
-            sourceIdentities.Add(scene.SourceIdentity);
-        }
-
-        for (int payloadIndex = 0; payloadIndex < scene.PayloadReferences.Length; payloadIndex++) {
-            PlatformBuildPayloadReference payloadReference = scene.PayloadReferences[payloadIndex];
-            if (payloadReference != null && !string.IsNullOrWhiteSpace(payloadReference.SourceIdentity)) {
-                sourceIdentities.Add(payloadReference.SourceIdentity);
+    /// <summary>Validates package paths and prepares every source and texture cook before replacing either existing output tree.</summary>
+    IReadOnlyList<PsVitaPreparedPayload> PreparePackagedPayloads(PlatformBuildRequest request, string stagedRoot, List<PlatformBuildDiagnostic> diagnostics,
+        IPlatformBuildDiagnosticReporter reporter, CancellationToken cancellationToken) {
+        List<PsVitaPreparedPayload> prepared = [];
+        HashSet<string> reserved = new(StringComparer.OrdinalIgnoreCase);
+        Dictionary<string, string> sourcesByDestination = new(StringComparer.OrdinalIgnoreCase);
+        try {
+            PsVitaTextureCookPath.ValidateRoot(request.OutputRoot);
+            PsVitaTextureCookPath.ValidateRoot(request.WorkingRoot);
+            PsVitaTextureCookPath.ValidateRoot(stagedRoot);
+            foreach (PlatformBuildScene scene in request.Manifest.Scenes) {
+                PrepareSourcePayload(scene.SourceIdentity, scene.SceneId, request, stagedRoot, prepared, reserved, sourcesByDestination, cancellationToken);
+                foreach (PlatformBuildPayloadReference reference in scene.PayloadReferences) {
+                    PrepareSourcePayload(reference.SourceIdentity, scene.SceneId, request, stagedRoot, prepared, reserved, sourcesByDestination, cancellationToken);
+                }
             }
-        }
-
-        bool allCopied = true;
-        for (int sourceIndex = 0; sourceIndex < sourceIdentities.Count; sourceIndex++) {
-            string sourceIdentity = sourceIdentities[sourceIndex];
-            if (!stagedSourceIdentities.Add(sourceIdentity)) {
-                continue;
+            foreach (PlatformBuildAsset asset in request.Manifest.LooseAssets) {
+                PrepareSourcePayload(asset.SourceIdentity, asset.AssetId, request, stagedRoot, prepared, reserved, sourcesByDestination, cancellationToken);
             }
-
-            StagePayload(scene.SceneId, sourceIdentity, outputRoot, stagedContentRootPath, diagnostics, diagnosticReporter, out bool copied);
-            allCopied &= copied;
+            foreach (PlatformBuildArtifact artifact in request.Manifest.CookedArtifacts ?? []) {
+                PsVitaTextureCookPath.Normalize(artifact.RelativePath);
+                PrepareSourcePayload(artifact.RelativePath, artifact.LogicalArtifactId, request, stagedRoot, prepared, reserved, sourcesByDestination, cancellationToken);
+            }
+            PlatformCookWorkItem[] workItems = request.Manifest.PlatformCookWorkItems ?? [];
+            foreach (PlatformCookWorkItem item in workItems) {
+                ArgumentNullException.ThrowIfNull(item);
+                if (item.TargetPlatformId != Definition.PlatformId || item.TargetArtifactKind != "runtime-texture"
+                    || (item.SourceAssetKind != "texture" && item.SourceAssetKind != "font-atlas-texture")) {
+                    throw new InvalidOperationException($"Unsupported Vita cook contract for '{item.WorkItemId}'.");
+                }
+                PsVitaTextureCookSettingsSerializer.Deserialize(item.SerializedPlatformSettings);
+                string outputRelative = ResolveCookedRelativePath(PsVitaTextureCookPath.Normalize(item.OutputRelativePath));
+                string stagedRelative = ResolveStagedContentRelativePath(outputRelative).Replace('\\', '/');
+                PsVitaTextureCookPath.Reserve(reserved, stagedRelative);
+                PsVitaTextureCookPath.Resolve(request.OutputRoot, outputRelative);
+                PsVitaTextureCookPath.Resolve(stagedRoot, stagedRelative);
+                ValidatePreparedSource(ResolveSourcePath(item.SourceAssetPath), request);
+            }
+            foreach (PlatformCookWorkItem item in workItems) {
+                cancellationToken.ThrowIfCancellationRequested();
+                string outputRelative = ResolveCookedRelativePath(item.OutputRelativePath);
+                prepared.Add(new PsVitaPreparedPayload {
+                    ItemId = item.OutputLogicalArtifactId, OutputRelativePath = outputRelative,
+                    StagedRelativePath = ResolveStagedContentRelativePath(outputRelative).Replace('\\', '/'), Bytes = ExecutePlatformCookWorkItem(item)
+                });
+            }
+        } catch (Exception exception) when (exception is not OperationCanceledException) {
+            string sourceIdentity = exception is FileNotFoundException missing && !string.IsNullOrWhiteSpace(missing.FileName) ? missing.FileName : request.OutputRoot;
+            AddDiagnostic(diagnostics, reporter, PlatformBuildDiagnosticSeverity.Error, exception is FileNotFoundException ? "VITABUILD002" : "VITABUILD004",
+                $"Vita package preparation failed: {exception.Message}", string.Empty, string.Empty, sourceIdentity);
         }
-
-        return allCopied;
+        return prepared;
     }
 
-    /// <summary>
-    /// Stages one payload into both the editor output root and the native-build content root.
-    /// </summary>
-    static void StagePayload(
-        string itemId,
-        string sourceIdentity,
-        string outputRoot,
-        string stagedContentRootPath,
-        List<PlatformBuildDiagnostic> diagnostics,
-        IPlatformBuildDiagnosticReporter diagnosticReporter,
-        out bool copied) {
-        copied = false;
-        if (string.IsNullOrWhiteSpace(sourceIdentity)) {
-            AddDiagnostic(
-                diagnostics,
-                diagnosticReporter,
-                PlatformBuildDiagnosticSeverity.Error,
-                "VITABUILD001",
-                $"Item '{itemId}' is missing a source identity.",
-                string.Empty,
-                itemId,
-                itemId);
+    /// <summary>Reads a distinct source once, rejecting aliases that would occupy another file's runtime path or be erased by staging reset.</summary>
+    static void PrepareSourcePayload(string sourceIdentity, string itemId, PlatformBuildRequest request, string stagedRoot,
+        List<PsVitaPreparedPayload> prepared, HashSet<string> reserved, Dictionary<string, string> sourcesByDestination, CancellationToken cancellationToken) {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (string.IsNullOrWhiteSpace(sourceIdentity)) throw new InvalidOperationException($"Vita item '{itemId}' is missing its source identity.");
+        string source = ResolveSourcePath(sourceIdentity);
+        ValidatePreparedSource(source, request);
+        string outputRelative = ResolveCookedRelativePath(sourceIdentity);
+        string stagedRelative = ResolveStagedContentRelativePath(outputRelative).Replace('\\', '/');
+        if (sourcesByDestination.TryGetValue(stagedRelative, out string existingSource)) {
+            if (!existingSource.Equals(source, StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException($"Vita source '{sourceIdentity}' conflicts with '{existingSource}'.");
             return;
         }
+        PsVitaTextureCookPath.Reserve(reserved, stagedRelative);
+        PsVitaTextureCookPath.Resolve(request.OutputRoot, outputRelative);
+        PsVitaTextureCookPath.Resolve(stagedRoot, stagedRelative);
+        sourcesByDestination.Add(stagedRelative, source);
+        prepared.Add(new PsVitaPreparedPayload {
+            ItemId = itemId, OutputRelativePath = outputRelative, StagedRelativePath = stagedRelative, Bytes = ResolveStagedPayloadBytes(source)
+        });
+    }
 
-        string sourcePath = ResolveSourcePath(sourceIdentity);
-        if (!File.Exists(sourcePath)) {
-            AddDiagnostic(
-                diagnostics,
-                diagnosticReporter,
-                PlatformBuildDiagnosticSeverity.Error,
-                "VITABUILD002",
-                $"Payload source '{sourceIdentity}' was not found.",
-                string.Empty,
-                itemId,
-                sourceIdentity);
-            return;
+    /// <summary>Rejects missing or linked input files and inputs inside either output tree that the completed batch will replace.</summary>
+    static void ValidatePreparedSource(string source, PlatformBuildRequest request) {
+        foreach (string root in new[] { request.OutputRoot, request.WorkingRoot }) {
+            string fullRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(root));
+            if (source.Equals(fullRoot, StringComparison.OrdinalIgnoreCase) || source.StartsWith(fullRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)) {
+                throw new InvalidOperationException("Vita cook source lies inside an output tree scheduled for replacement.");
+            }
         }
-
-        string relativePath = ResolveCookedRelativePath(sourceIdentity);
-        byte[] stagedPayloadBytes = ResolveStagedPayloadBytes(sourcePath);
-        WriteFile(stagedPayloadBytes, Path.Combine(outputRoot, relativePath));
-        WriteFile(stagedPayloadBytes, Path.Combine(stagedContentRootPath, ResolveStagedContentRelativePath(relativePath)));
-        copied = true;
+        if (!File.Exists(source)) throw new FileNotFoundException("Vita package source was not found.", source);
+        string current = source;
+        while (!string.IsNullOrEmpty(current)) {
+            if ((File.Exists(current) || Directory.Exists(current)) && (File.GetAttributes(current) & FileAttributes.ReparsePoint) != 0) throw new InvalidOperationException("Vita package source crosses a filesystem link.");
+            current = Path.GetDirectoryName(current);
+        }
     }
 
     /// <summary>
@@ -558,68 +516,6 @@ public sealed class PsVitaPlatformAssetBuilder : IPlatformAssetBuilder, IShaderB
     }
 
     /// <summary>
-    /// Executes builder-owned Vita cook work items directly into the staged output roots using the editor-resolved source path and serialized settings payload.
-    /// </summary>
-    /// <param name="request">Resolved build request.</param>
-    /// <param name="outputRoot">Editor output root that receives the cooked artifacts.</param>
-    /// <param name="stagedContentRootPath">Native staged-content root that receives the cooked artifacts.</param>
-    /// <param name="diagnostics">Diagnostic sink for cook failures.</param>
-    /// <param name="diagnosticReporter">Streaming diagnostic reporter.</param>
-    /// <param name="progressReporter">Streaming progress reporter.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    void ExecutePlatformCookWorkItems(
-        PlatformBuildRequest request,
-        string outputRoot,
-        string stagedContentRootPath,
-        List<PlatformBuildDiagnostic> diagnostics,
-        IPlatformBuildDiagnosticReporter diagnosticReporter,
-        IPlatformBuildProgressReporter progressReporter,
-        CancellationToken cancellationToken) {
-        if (request == null) {
-            throw new ArgumentNullException(nameof(request));
-        } else if (string.IsNullOrWhiteSpace(outputRoot)) {
-            throw new ArgumentException("Output root must be provided.", nameof(outputRoot));
-        } else if (string.IsNullOrWhiteSpace(stagedContentRootPath)) {
-            throw new ArgumentException("Staged content root path must be provided.", nameof(stagedContentRootPath));
-        } else if (diagnostics == null) {
-            throw new ArgumentNullException(nameof(diagnostics));
-        } else if (diagnosticReporter == null) {
-            throw new ArgumentNullException(nameof(diagnosticReporter));
-        } else if (progressReporter == null) {
-            throw new ArgumentNullException(nameof(progressReporter));
-        }
-
-        PlatformCookWorkItem[] platformCookWorkItems = request.Manifest.PlatformCookWorkItems ?? [];
-        for (int workItemIndex = 0; workItemIndex < platformCookWorkItems.Length; workItemIndex++) {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            PlatformCookWorkItem workItem = platformCookWorkItems[workItemIndex];
-            try {
-                byte[] cookedPayloadBytes = ExecutePlatformCookWorkItem(workItem);
-                string outputRelativePath = ResolveCookedRelativePath(workItem.OutputRelativePath);
-                WriteFile(cookedPayloadBytes, Path.Combine(outputRoot, outputRelativePath));
-                WriteFile(cookedPayloadBytes, Path.Combine(stagedContentRootPath, ResolveStagedContentRelativePath(outputRelativePath)));
-                progressReporter.Report(new PlatformBuildProgressUpdate(
-                    "Execute Platform Cook Work Items",
-                    workItem.OutputLogicalArtifactId,
-                    workItemIndex + 1,
-                    platformCookWorkItems.Length,
-                    $"Cooked platform-owned artifact '{workItem.OutputRelativePath}'."));
-            } catch (Exception ex) {
-                AddDiagnostic(
-                    diagnostics,
-                    diagnosticReporter,
-                    PlatformBuildDiagnosticSeverity.Error,
-                    "VITABUILD004",
-                    $"Platform cook work item '{workItem.WorkItemId}' failed: {ex.Message}",
-                    string.Empty,
-                    workItem.OutputLogicalArtifactId,
-                    workItem.OutputRelativePath);
-            }
-        }
-    }
-
-    /// <summary>
     /// Executes one builder-owned Vita cook work item and returns the cooked runtime payload bytes.
     /// </summary>
     /// <param name="workItem">Builder-owned Vita cook work item to execute.</param>
@@ -631,13 +527,14 @@ public sealed class PsVitaPlatformAssetBuilder : IPlatformAssetBuilder, IShaderB
             throw new InvalidOperationException($"Unsupported Vita work item target platform '{workItem.TargetPlatformId}'.");
         }
 
+        if (workItem.TargetArtifactKind != "runtime-texture") throw new InvalidOperationException($"Unsupported Vita work item artifact '{workItem.TargetArtifactKind}'.");
         TextureAssetProcessorSettings settings = PsVitaTextureCookSettingsSerializer.Deserialize(workItem.SerializedPlatformSettings);
         string assetId = ResolveCookWorkItemAssetId(workItem);
         if (string.Equals(workItem.SourceAssetKind, "texture", StringComparison.OrdinalIgnoreCase)) {
-            TextureAsset cookedTextureAsset = PlatformCookSourceProcessor.CookTexture(workItem.SourceAssetPath, assetId, settings);
+            using TextureAsset cookedTextureAsset = PlatformCookSourceProcessor.CookTexture(ResolveSourcePath(workItem.SourceAssetPath), assetId, settings);
             return global::helengine.files.AssetSerializer.SerializeToBytes(cookedTextureAsset);
         } else if (string.Equals(workItem.SourceAssetKind, "font-atlas-texture", StringComparison.OrdinalIgnoreCase)) {
-            TextureAsset cookedAtlasTextureAsset = PlatformCookSourceProcessor.CookFontAtlasTexture(workItem.SourceAssetPath, assetId, settings);
+            using TextureAsset cookedAtlasTextureAsset = PlatformCookSourceProcessor.CookFontAtlasTexture(ResolveSourcePath(workItem.SourceAssetPath), assetId, settings);
             return global::helengine.files.AssetSerializer.SerializeToBytes(cookedAtlasTextureAsset);
         }
 
@@ -719,12 +616,13 @@ public sealed class PsVitaPlatformAssetBuilder : IPlatformAssetBuilder, IShaderB
     /// <param name="sourceIdentity">Source identity from the build manifest.</param>
     /// <returns>Absolute source path.</returns>
     static string ResolveSourcePath(string sourceIdentity) {
+        if (string.IsNullOrWhiteSpace(sourceIdentity)) throw new InvalidOperationException("Vita source identity is required.");
         string normalizedSourceIdentity = sourceIdentity.Replace('\\', Path.DirectorySeparatorChar).Replace('/', Path.DirectorySeparatorChar);
         if (Path.IsPathRooted(normalizedSourceIdentity)) {
             return Path.GetFullPath(normalizedSourceIdentity);
         }
 
-        return Path.GetFullPath(Path.Combine(Directory.GetCurrentDirectory(), normalizedSourceIdentity));
+        return PsVitaTextureCookPath.Resolve(Directory.GetCurrentDirectory(), sourceIdentity);
     }
 
     /// <summary>
@@ -733,10 +631,8 @@ public sealed class PsVitaPlatformAssetBuilder : IPlatformAssetBuilder, IShaderB
     /// <param name="sourceIdentity">Source identity from the build manifest.</param>
     /// <returns>Cooked relative output path.</returns>
     static string ResolveCookedRelativePath(string sourceIdentity) {
-        string normalizedSourceIdentity = sourceIdentity.Replace('\\', '/').TrimStart('/');
-        if (Path.IsPathRooted(normalizedSourceIdentity)) {
-            normalizedSourceIdentity = Path.GetFileName(normalizedSourceIdentity);
-        }
+        string normalizedSourceIdentity = Path.IsPathRooted(sourceIdentity) ? Path.GetFileName(sourceIdentity) : sourceIdentity;
+        normalizedSourceIdentity = PsVitaTextureCookPath.Normalize(normalizedSourceIdentity);
 
         const string CookedPrefix = "cooked/";
         if (normalizedSourceIdentity.StartsWith(CookedPrefix, StringComparison.OrdinalIgnoreCase)) {

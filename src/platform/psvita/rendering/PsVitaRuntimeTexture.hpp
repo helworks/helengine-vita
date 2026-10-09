@@ -9,6 +9,7 @@
 
 #include "platform/psvita/rendering/PsVitaGpuTexture.hpp"
 #include "RuntimeTexture.hpp"
+#include "platform/psvita/rendering/PsVitaNativeTextureLayout.hpp"
 
 namespace helengine::psvita::rendering {
     /// Stores PS Vita-ready ABGR8888 texture pixels that can later be uploaded into the native Vita renderer.
@@ -53,6 +54,21 @@ namespace helengine::psvita::rendering {
         /// Releases and returns the owned native PS Vita GPU texture allocation.
         std::unique_ptr<PsVitaGpuTexture> ReleaseGpuTexture();
 
+        /// Copies a validated native layout and takes ownership of native texel and palette payloads.
+        void SetNativePayload(const PsVitaNativeTextureLayout& layout, std::vector<std::uint8_t>&& pixels,
+            std::vector<std::uint8_t>&& palette);
+        /// Gets whether the runtime texture carries GPU-ready VGT1 native bytes.
+        bool HasNativePayload() const;
+        /// Gets the validated native payload layout retained for upload and region-update validation.
+        const PsVitaNativeTextureLayout& GetNativeLayout() const;
+        /// Gets the owned native texel payload excluding its serialized header.
+        const std::vector<std::uint8_t>& GetNativePixels() const;
+        /// Gets the owned full native ABGR32 palette, or an empty vector for direct formats.
+        const std::vector<std::uint8_t>& GetNativePalette() const;
+        /// Updates one validated RGBA region and any existing GPU allocation after synchronization.
+        void UpdateRgbaRegion(int x, int y, int width, int height, const std::uint8_t* rgba,
+            std::size_t sourceLength, int sourceRowPitch, bool mainSceneOpen = false);
+
     private:
         /// Stores PS Vita-ready ABGR8888 texels in row-major order.
         std::vector<std::uint32_t> PixelsAbgr8888;
@@ -62,6 +78,12 @@ namespace helengine::psvita::rendering {
 
         /// Stores the uploaded native PS Vita GPU texture once one GXM upload occurs.
         std::unique_ptr<PsVitaGpuTexture> GpuTexture;
+        /// Stores the validated native upload layout for VGT1 textures.
+        PsVitaNativeTextureLayout NativeLayout;
+        /// Retains exact GPU-ready bytes for upload and supported region updates.
+        std::vector<std::uint8_t> NativePixels;
+        /// Retains complete native palette bytes until texture retirement.
+        std::vector<std::uint8_t> NativePalette;
     };
 }
 

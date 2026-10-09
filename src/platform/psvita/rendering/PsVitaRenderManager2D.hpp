@@ -12,6 +12,7 @@ class IDrawable2D;
 #include "platform/psvita/rendering/PsVitaQueuedQuad.hpp"
 #include "platform/psvita/rendering/PsVitaSolidColorVertex.hpp"
 #include "platform/psvita/rendering/PsVitaTextureCache.hpp"
+#include "platform/psvita/rendering/PsVitaDrawOrder.hpp"
 #include "IRenderVisitor2D.hpp"
 #include "RenderManager2D.hpp"
 #include "byte4.hpp"
@@ -62,6 +63,10 @@ namespace helengine::psvita {
         void Visit(::IDrawable2D* drawable) override;
 
     private:
+        /// Patches retained RGBA pixels and synchronizes an existing GPU allocation; immutable native formats reject updates.
+        void UpdateTextureRegionCore(::RuntimeTexture* texture, int32_t x, int32_t y, int32_t width, int32_t height,
+            ::Array<uint8_t>* rgba8, int32_t sourceRowPitch) override;
+
         /// Appends one queued solid-color triangle to the current frame submission list.
         void AppendSolidTriangle(
             float x0,
@@ -71,7 +76,7 @@ namespace helengine::psvita {
             float x2,
             float y2,
             std::uint32_t colorAbgr,
-            std::uint8_t renderOrder);
+            std::uint32_t renderOrder);
 
         /// Appends one queued solid-color quad as two triangles to the current frame submission list.
         void AppendSolidQuad(
@@ -80,7 +85,7 @@ namespace helengine::psvita {
             float right,
             float bottom,
             std::uint32_t colorAbgr,
-            std::uint8_t renderOrder);
+            std::uint32_t renderOrder);
 
         /// Appends one filled rounded rectangle using solid-color triangles for the current menu pass.
         void AppendFilledRoundedRect(
@@ -88,7 +93,7 @@ namespace helengine::psvita {
             const ::int2& size,
             double radius,
             std::uint32_t colorAbgr,
-            std::uint8_t renderOrder);
+            std::uint32_t renderOrder);
 
         /// Appends one rounded-corner triangle fan using the supplied angle range.
         void AppendRoundedCornerFan(
@@ -98,19 +103,25 @@ namespace helengine::psvita {
             double startAngleRadians,
             double endAngleRadians,
             std::uint32_t colorAbgr,
-            std::uint8_t renderOrder);
+            std::uint32_t renderOrder);
 
         /// Packs one engine byte color into the ABGR layout expected by Vita2D.
         static std::uint32_t PackColorAbgr(const byte4& color);
 
         /// Combines camera draw order and local drawable order into one globally sortable Vita submission key.
-        static std::uint16_t ComposeRenderOrder(std::uint16_t cameraRenderOrder, std::uint8_t renderOrder);
+        static std::uint64_t ComposeRenderOrder(std::uint16_t cameraRenderOrder, std::uint32_t renderOrder);
+
+        /// Allocates one monotonically increasing request ordinal, preserving the order supplied by VisitOrdered.
+        std::uint32_t NextDrawRequestOrdinal();
 
         /// Stores the native PS Vita GXM renderer that receives queued sprite batches.
         rendering::PsVitaGxmRenderer* GxmRenderer = nullptr;
 
         /// Stores the camera draw-order tier currently producing queued 2D primitives.
         std::uint16_t ActiveCameraRenderOrder = 0u;
+
+        /// Counts complete draw requests in the current frame; glyphs and shape subcommands share their request ordinal.
+        rendering::PsVitaDrawRequestOrder DrawRequestOrder;
 
         /// Stores the queued solid-color rounded-rectangle triangles built during the current frame.
         std::vector<rendering::PsVitaSolidColorVertex> QueuedSolidColorTriangles;

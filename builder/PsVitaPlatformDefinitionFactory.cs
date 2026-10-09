@@ -331,19 +331,31 @@ public static class PsVitaPlatformDefinitionFactory {
     }
 
     /// <summary>
-    /// Creates the generic texture format capability metadata supported by the Vita texture cooker.
+    /// Publishes compatible generic formats and only the GXM catalog entries with a genuine image encoder.
     /// </summary>
     /// <returns>Texture capability metadata for Vita builder-owned texture cook contracts.</returns>
     static PlatformTextureFormatCapabilityDefinition CreateTextureFormatCapabilities() {
-        return new PlatformTextureFormatCapabilityDefinition(
-            [
-                TextureAssetColorFormat.Rgba32.ToString()
-            ],
-            [
-                TextureAssetAlphaPrecision.A8
-            ],
-            [
-                new PlatformTextureFormatCombinationDefinition(TextureAssetColorFormat.Rgba32.ToString(), TextureAssetAlphaPrecision.A8)
-            ]);
+        List<string> ids = [];
+        HashSet<TextureAssetAlphaPrecision> alphas = [];
+        List<PlatformTextureFormatCombinationDefinition> combinations = [];
+        foreach (TextureAssetColorFormat colorFormat in Enum.GetValues<TextureAssetColorFormat>()) {
+            string id = colorFormat.ToString();
+            if (!TextureAssetProcessorSettings.TryResolveGenericColorFormat(id, out _)) continue;
+            ids.Add(id);
+            foreach (TextureAssetAlphaPrecision alpha in Enum.GetValues<TextureAssetAlphaPrecision>()) {
+                if (!TextureAssetPixelCodec.IsAlphaPrecisionSupported(colorFormat, alpha)) continue;
+                alphas.Add(alpha);
+                combinations.Add(new PlatformTextureFormatCombinationDefinition(id, alpha));
+            }
+        }
+        foreach (VitaNativeTextureFormatDefinition format in VitaNativeTextureFormatCatalog.Formats) {
+            if (!format.SupportsCooking) continue;
+            ids.Add(format.Id);
+            foreach (TextureAssetAlphaPrecision alpha in format.SupportedAlphaPrecisions) {
+                alphas.Add(alpha);
+                combinations.Add(new PlatformTextureFormatCombinationDefinition(format.Id, alpha));
+            }
+        }
+        return new PlatformTextureFormatCapabilityDefinition(ids, alphas.OrderBy(alpha => alpha).ToArray(), combinations);
     }
 }

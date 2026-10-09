@@ -68,7 +68,9 @@ namespace helengine::psvita {
         ::RuntimeMaterial* BuildMaterialFromCooked(::MaterialAsset* materialAsset);
 
         /// Builds one concrete runtime material from one deserialized shader material asset payload.
+#if HE_CPP_FEATURE_SHADERS
         ::RuntimeMaterial* BuildMaterialFromCooked(::ShaderMaterialAsset* materialAsset);
+#endif
 
         /// Builds one concrete PS Vita runtime model from one packaged cooked model asset.
         ::RuntimeModel* BuildModelFromCooked(std::string cookedAssetPath, IContentStreamSource* contentStreamSource) override;
@@ -138,7 +140,9 @@ namespace helengine::psvita {
         static ::RuntimeMaterial* BuildCompiledShaderRuntimeMaterial(const rendering::PsVitaCompiledShaderMaterial& materialAsset);
 
         /// Loads and attaches the packaged diffuse texture referenced by one shader material.
+#if HE_CPP_FEATURE_SHADERS
         static void AttachDiffuseTexture(::RuntimeMaterial* runtimeMaterial, ::ShaderMaterialAsset* materialAsset, const std::string& cookedAssetPath, IContentStreamSource* contentStreamSource);
+#endif
 
         /// Resolves the runtime material that should drive one runtime submesh draw.
         static ::RuntimeMaterial* ResolveSubmeshMaterial(::MeshComponent* meshComponent, int32_t submeshIndex);
@@ -147,7 +151,9 @@ namespace helengine::psvita {
         static std::uint32_t ResolveSolidColorSubmeshColor(::MeshComponent* meshComponent, int32_t submeshIndex);
 
         /// Resolves one cooked material's standard base-color constant buffer into packed Vita color.
+#if HE_CPP_FEATURE_SHADERS
         static std::uint32_t ResolveCookedMaterialBaseColorAbgr(::ShaderMaterialAsset* materialAsset);
+#endif
 
         /// Copies one runtime submesh array from the raw model asset into PS Vita-owned submesh objects.
         Array<rendering::PsVitaRuntimeSubmesh*>* BuildRuntimeSubmeshes(::ModelAsset* data, const std::vector<std::uint32_t>& resolvedIndices);

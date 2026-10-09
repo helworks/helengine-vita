@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <stdexcept>
 #include <string>
+#include "platform/psvita/rendering/PsVitaDrawOrder.hpp"
 
 #include "Asset.hpp"
 #include "AssetSerializer.hpp"
@@ -103,6 +104,20 @@ namespace helengine::psvita {
         return TextureCache.BuildTextureFromRaw(data);
     }
 
+    /// Updates only live mutable textures, retaining CPU pixels for a later upload when needed.
+    void PsVitaRenderManager2D::UpdateTextureRegionCore(::RuntimeTexture* texture, int32_t x, int32_t y,
+        int32_t width, int32_t height, ::Array<uint8_t>* rgba8, int32_t sourceRowPitch) {
+        auto* nativeTexture = dynamic_cast<rendering::PsVitaRuntimeTexture*>(texture);
+        if (nativeTexture == nullptr || rgba8 == nullptr || rgba8->Data == nullptr || rgba8->Length < 0
+            || TextureCache.IsPendingRelease(nativeTexture)
+            || (GxmRenderer != nullptr && GxmRenderer->IsShadowDepthPassActive())) {
+            throw std::invalid_argument("PS Vita texture region update requires live native texture and source pixels.");
+        }
+        nativeTexture->UpdateRgbaRegion(x, y, width, height, rgba8->Data,
+            static_cast<std::size_t>(rgba8->Length), sourceRowPitch,
+            GxmRenderer != nullptr && GxmRenderer->IsMainFrameBegun());
+    }
+
     /// Assigns the native PS Vita GXM renderer that will receive flushed quad batches.
     void PsVitaRenderManager2D::SetGxmRenderer(rendering::PsVitaGxmRenderer* gxmRenderer) {
         GxmRenderer = gxmRenderer;
@@ -126,6 +141,7 @@ namespace helengine::psvita {
     /// Flushes one frame of queued PS Vita 2D commands through the native renderer foundation.
     void PsVitaRenderManager2D::Draw() {
         if (QueuedSolidColorTriangles.empty() && QueuedQuads.empty()) {
+            DrawRequestOrder.Reset();
             return;
         }
 
@@ -146,7 +162,7 @@ namespace helengine::psvita {
             std::vector<rendering::PsVitaSolidColorVertex> solidColorLayer;
             std::vector<rendering::PsVitaQueuedQuad> quadLayer;
             while (solidColorIndex < QueuedSolidColorTriangles.size() || quadIndex < QueuedQuads.size()) {
-                std::uint16_t renderOrder = solidColorIndex < QueuedSolidColorTriangles.size()
+                std::uint64_t renderOrder = solidColorIndex < QueuedSolidColorTriangles.size()
                     ? QueuedSolidColorTriangles[solidColorIndex].RenderOrder
                     : QueuedQuads[quadIndex].RenderOrder;
                 if (quadIndex < QueuedQuads.size() && QueuedQuads[quadIndex].RenderOrder < renderOrder) {
@@ -176,6 +192,7 @@ namespace helengine::psvita {
 
         QueuedSolidColorTriangles.clear();
         QueuedQuads.clear();
+        DrawRequestOrder.Reset();
     }
 
     /// Releases one PS Vita runtime texture previously created by this renderer.
@@ -246,7 +263,7 @@ namespace helengine::psvita {
         }
 
         float3 position = shape->get_Parent()->get_Position();
-        std::uint8_t renderOrder = shape->get_RenderOrder2D();
+        std::uint32_t renderOrder = NextDrawRequestOrdinal();
         int32_t borderThickness = std::max<int32_t>(0, static_cast<int32_t>(std::lround(shape->get_BorderThickness())));
         double clampedRadius = std::max(
             0.0,
@@ -299,7 +316,7 @@ namespace helengine::psvita {
         }
 
         rendering::PsVitaRuntimeTexture* texture = dynamic_cast<rendering::PsVitaRuntimeTexture*>(sprite->get_Texture());
-        if (texture == nullptr || !texture->HasPixels()) {
+        if (texture == nullptr || (!texture->HasPixels() && !texture->HasNativePayload())) {
             return;
         }
 
@@ -340,7 +357,7 @@ namespace helengine::psvita {
 
         rendering::PsVitaQueuedQuad queuedQuad{};
         queuedQuad.Texture = texture;
-        queuedQuad.RenderOrder = ComposeRenderOrder(ActiveCameraRenderOrder, sprite->get_RenderOrder2D());
+        queuedQuad.RenderOrder = ComposeRenderOrder(ActiveCameraRenderOrder, NextDrawRequestOrdinal());
         queuedQuad.UsesLogicalTextureExtents = true;
 
         double topLeftOffsetX = -halfWidth;
@@ -389,10 +406,11 @@ namespace helengine::psvita {
 
         ::FontAsset* font = text->get_Font();
         rendering::PsVitaRuntimeTexture* texture = dynamic_cast<rendering::PsVitaRuntimeTexture*>(font->get_Texture());
-        if (texture == nullptr || !texture->HasPixels()) {
+        if (texture == nullptr || (!texture->HasPixels() && !texture->HasNativePayload())) {
             return;
         }
 
+        const std::uint32_t renderOrder = NextDrawRequestOrdinal();
         std::string content = text->get_Text();
         const double fontScale = 1.0;
         if (text->get_WrapText()) {
@@ -484,7 +502,7 @@ namespace helengine::psvita {
                     std::uint32_t packedColor = PackColorAbgr(effectPass.Color);
                     rendering::PsVitaQueuedQuad queuedQuad{};
                     queuedQuad.Texture = texture;
-                    queuedQuad.RenderOrder = ComposeRenderOrder(ActiveCameraRenderOrder, text->get_RenderOrder2D());
+                    queuedQuad.RenderOrder = ComposeRenderOrder(ActiveCameraRenderOrder, renderOrder);
                     queuedQuad.UsesLogicalTextureExtents = true;
 
                     queuedQuad.Vertices[0].PositionX = static_cast<float>(glyphX + static_cast<double>(effectPass.Offset.X));
@@ -545,7 +563,7 @@ namespace helengine::psvita {
         float x2,
         float y2,
         std::uint32_t colorAbgr,
-        std::uint8_t renderOrder) {
+        std::uint32_t renderOrder) {
         QueuedSolidColorTriangles.push_back(rendering::PsVitaSolidColorVertex {
             x0,
             y0,
@@ -573,7 +591,7 @@ namespace helengine::psvita {
         float right,
         float bottom,
         std::uint32_t colorAbgr,
-        std::uint8_t renderOrder) {
+        std::uint32_t renderOrder) {
         if (right <= left || bottom <= top) {
             return;
         }
@@ -588,7 +606,7 @@ namespace helengine::psvita {
         const ::int2& size,
         double radius,
         std::uint32_t colorAbgr,
-        std::uint8_t renderOrder) {
+        std::uint32_t renderOrder) {
         if (size.X <= 0 || size.Y <= 0) {
             return;
         }
@@ -654,7 +672,7 @@ namespace helengine::psvita {
         double startAngleRadians,
         double endAngleRadians,
         std::uint32_t colorAbgr,
-        std::uint8_t renderOrder) {
+        std::uint32_t renderOrder) {
         if (radius <= 0.0) {
             return;
         }
@@ -676,8 +694,12 @@ namespace helengine::psvita {
     }
 
     /// Combines one camera draw order and one local drawable order into a stable global queue key.
-    std::uint16_t PsVitaRenderManager2D::ComposeRenderOrder(std::uint16_t cameraRenderOrder, std::uint8_t renderOrder) {
-        return static_cast<std::uint16_t>((cameraRenderOrder << 8u) | renderOrder);
+    std::uint64_t PsVitaRenderManager2D::ComposeRenderOrder(std::uint16_t cameraRenderOrder, std::uint32_t renderOrder) {
+        return rendering::ComposePsVitaDrawOrder(cameraRenderOrder, renderOrder);
+    }
+
+    std::uint32_t PsVitaRenderManager2D::NextDrawRequestOrdinal() {
+        return DrawRequestOrder.Next();
     }
 
     /// Packs one engine byte color into the ABGR layout expected by Vita2D.

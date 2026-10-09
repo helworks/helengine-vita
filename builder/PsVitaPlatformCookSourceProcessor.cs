@@ -23,9 +23,9 @@ public sealed class PsVitaPlatformCookSourceProcessor : IPsVitaPlatformCookSourc
     const string EditorAppAssemblyRelativePath = @"helengine.ui\helengine.editor.app\bin\Debug\net9.0-windows\helengine.editor.app.dll";
 
     /// <summary>
-    /// Shared texture processor used to apply editor-resolved Vita texture settings.
+    /// Builder-owned cooker that preserves imported storage while applying generic or native Vita settings.
     /// </summary>
-    readonly TextureAssetProcessor TextureAssetProcessor;
+    readonly PsVitaTextureCooker TextureCooker;
 
     /// <summary>
     /// Lazily initialized default texture importer registrations loaded from the Windows editor backend.
@@ -41,7 +41,7 @@ public sealed class PsVitaPlatformCookSourceProcessor : IPsVitaPlatformCookSourc
     /// Initializes the shared source processor used by Vita builder-owned work items.
     /// </summary>
     public PsVitaPlatformCookSourceProcessor() {
-        TextureAssetProcessor = new TextureAssetProcessor();
+        TextureCooker = new PsVitaTextureCooker();
     }
 
     /// <summary>
@@ -62,14 +62,8 @@ public sealed class PsVitaPlatformCookSourceProcessor : IPsVitaPlatformCookSourc
             throw new FileNotFoundException("Source texture file was not found.", sourceAssetPath);
         }
 
-        TextureImporterRegistration importer = ResolveTextureImporter(sourceAssetPath);
-        using FileStream stream = new FileStream(sourceAssetPath, FileMode.Open, FileAccess.Read, FileShare.Read);
-        TextureAsset importedTextureAsset = importer.Importer.ImportTexture(stream);
-        if (importedTextureAsset == null) {
-            throw new InvalidOperationException($"Texture importer '{importer.ImporterId}' did not return a texture asset for '{sourceAssetPath}'.");
-        }
-
-        TextureAsset cookedTextureAsset = TextureAssetProcessor.Apply(importedTextureAsset, settings);
+        using TextureAsset importedTextureAsset = LoadSourceTexture(sourceAssetPath);
+        TextureAsset cookedTextureAsset = TextureCooker.CookTexture(importedTextureAsset, settings);
         cookedTextureAsset.Id = assetId;
         cookedTextureAsset.RuntimeAssetId = RuntimeAssetIdGenerator.Generate(assetId);
         return cookedTextureAsset;
@@ -93,11 +87,25 @@ public sealed class PsVitaPlatformCookSourceProcessor : IPsVitaPlatformCookSourc
             throw new FileNotFoundException("Source font file was not found.", sourceAssetPath);
         }
 
-        TextureAsset importedAtlasTextureAsset = LoadSourceFontAtlasTexture(sourceAssetPath);
-        TextureAsset cookedAtlasAsset = TextureAssetProcessor.Apply(importedAtlasTextureAsset, settings);
+        using TextureAsset importedAtlasTextureAsset = LoadSourceFontAtlasTexture(sourceAssetPath);
+        TextureAsset cookedAtlasAsset = TextureCooker.CookTexture(importedAtlasTextureAsset, settings);
         cookedAtlasAsset.Id = assetId + FontAtlasSuffix;
         cookedAtlasAsset.RuntimeAssetId = RuntimeAssetIdGenerator.Generate(cookedAtlasAsset.Id);
         return cookedAtlasAsset;
+    }
+
+    /// <summary>Loads serialized texture assets without Windows import dependencies, or imports one supported authoring image into owned storage.</summary>
+    TextureAsset LoadSourceTexture(string sourceAssetPath) {
+        string extension = Path.GetExtension(sourceAssetPath);
+        if (extension.Equals(".hetex", StringComparison.OrdinalIgnoreCase) || extension.Equals(".hasset", StringComparison.OrdinalIgnoreCase) || extension.Equals(".heasset", StringComparison.OrdinalIgnoreCase)) {
+            using FileStream serialized = File.OpenRead(sourceAssetPath);
+            return global::helengine.files.AssetSerializer.Deserialize(serialized) as TextureAsset
+                ?? throw new InvalidOperationException($"Serialized source '{sourceAssetPath}' is not a texture.");
+        }
+        TextureImporterRegistration importer = ResolveTextureImporter(sourceAssetPath);
+        using FileStream stream = File.OpenRead(sourceAssetPath);
+        return importer.Importer.ImportTexture(stream)
+            ?? throw new InvalidOperationException($"Texture importer '{importer.ImporterId}' did not return a texture asset for '{sourceAssetPath}'.");
     }
 
     /// <summary>
@@ -133,38 +141,34 @@ public sealed class PsVitaPlatformCookSourceProcessor : IPsVitaPlatformCookSourc
     TextureAsset LoadSourceFontAtlasTexture(string sourceAssetPath) {
         if (string.Equals(Path.GetExtension(sourceAssetPath), ".hefont", StringComparison.OrdinalIgnoreCase)) {
             using FileStream stream = new FileStream(sourceAssetPath, FileMode.Open, FileAccess.Read, FileShare.Read);
-            FontAsset fontAsset = global::helengine.files.FontAssetBinarySerializer.Deserialize(stream);
+            using FontAsset fontAsset = global::helengine.files.FontAssetBinarySerializer.Deserialize(stream);
             if (fontAsset.SourceTextureAsset == null) {
                 throw new InvalidOperationException($"Packaged font source '{sourceAssetPath}' did not provide an atlas texture payload.");
             }
 
-            return fontAsset.SourceTextureAsset;
+            TextureAsset atlas = fontAsset.SourceTextureAsset;
+            fontAsset.SourceTextureAsset = null;
+            return atlas;
         }
 
         if (string.Equals(Path.GetExtension(sourceAssetPath), ".hasset", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(Path.GetExtension(sourceAssetPath), ".hetex", StringComparison.OrdinalIgnoreCase)) {
-            using FileStream stream = new FileStream(sourceAssetPath, FileMode.Open, FileAccess.Read, FileShare.Read);
-            return global::helengine.files.AssetSerializer.Deserialize(stream) as TextureAsset
-                ?? throw new InvalidOperationException($"Serialized texture source '{sourceAssetPath}' did not contain a TextureAsset payload.");
+            string.Equals(Path.GetExtension(sourceAssetPath), ".hetex", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(Path.GetExtension(sourceAssetPath), ".heasset", StringComparison.OrdinalIgnoreCase)) {
+            return LoadSourceTexture(sourceAssetPath);
         }
 
         if (CanResolveTextureImporter(sourceAssetPath)) {
-            TextureImporterRegistration importer = ResolveTextureImporter(sourceAssetPath);
-            using FileStream stream = new FileStream(sourceAssetPath, FileMode.Open, FileAccess.Read, FileShare.Read);
-            TextureAsset importedTextureAsset = importer.Importer.ImportTexture(stream);
-            if (importedTextureAsset == null) {
-                throw new InvalidOperationException($"Texture importer '{importer.ImporterId}' did not return a texture asset for '{sourceAssetPath}'.");
-            }
-
-            return importedTextureAsset;
+            return LoadSourceTexture(sourceAssetPath);
         }
 
-        FontAsset importedFontAsset = ImportRawFontAsset(sourceAssetPath);
+        using FontAsset importedFontAsset = ImportRawFontAsset(sourceAssetPath);
         if (importedFontAsset.SourceTextureAsset == null) {
             throw new InvalidOperationException($"Source font '{sourceAssetPath}' did not provide an atlas texture payload.");
         }
 
-        return importedFontAsset.SourceTextureAsset;
+        TextureAsset importedAtlas = importedFontAsset.SourceTextureAsset;
+        importedFontAsset.SourceTextureAsset = null;
+        return importedAtlas;
     }
 
     /// <summary>

@@ -28,6 +28,7 @@ set(HELENGINE_PSVITA_VPK_FILE_ARGS)
 set(HELENGINE_PSVITA_SOURCES
     src/main.cpp
     src/platform/psvita/PsVitaBootHost.cpp
+    src/platform/psvita/rendering/PsVitaGxmInitialization.cpp
 )
 
 if(DEFINED HELENGINE_CORE_CPP_ROOT AND NOT HELENGINE_CORE_CPP_ROOT STREQUAL "")
@@ -65,6 +66,8 @@ if(DEFINED HELENGINE_CORE_CPP_ROOT AND NOT HELENGINE_CORE_CPP_ROOT STREQUAL "")
         src/platform/psvita/PsVitaRuntimeDiagnosticsProvider.cpp
         src/platform/psvita/PsVitaRuntimeSceneCatalogFactory.cpp
         src/platform/psvita/rendering/PsVitaGpuTexture.cpp
+        src/platform/psvita/rendering/PsVitaNativeTextureLayout.cpp
+        src/platform/psvita/rendering/PsVitaNativeTextureUpload.cpp
         src/platform/psvita/shaders/PsVitaShaderArtifactWriter.cpp
           src/platform/psvita/shaders/PsVitaShaderArtifactReader.cpp
           src/platform/psvita/shaders/PsVitaShaderBundleReader.cpp
@@ -104,6 +107,9 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/cooked")
 endif()
 
 add_executable(${PROJECT_NAME} ${HELENGINE_PSVITA_SOURCES})
+
+# libvita2d owns GXM initialization but does not expose its initialization flags.
+target_link_options(${PROJECT_NAME} PRIVATE -Wl,--wrap=sceGxmInitialize)
 
 target_include_directories(${PROJECT_NAME} PRIVATE
     src

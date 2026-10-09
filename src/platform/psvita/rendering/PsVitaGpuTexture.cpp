@@ -3,6 +3,8 @@
 #if HELENGINE_PSVITA_HAS_GENERATED_CORE
 
 #include <vita2d.h>
+#include <stdexcept>
+#include "platform/psvita/rendering/PsVitaNativeTextureUpload.hpp"
 
 namespace helengine::psvita::rendering {
     /// Creates one empty PS Vita GPU texture record with no uploaded native allocation.
@@ -15,7 +17,7 @@ namespace helengine::psvita::rendering {
 
     /// Releases the owned native PS Vita texture allocation when one upload occurred.
     PsVitaGpuTexture::~PsVitaGpuTexture() {
-        if (NativeTexture != nullptr) {
+        if (NativeTexture != nullptr && NativeUpload == nullptr) {
             vita2d_free_texture(NativeTexture);
             NativeTexture = nullptr;
         }
@@ -43,6 +45,9 @@ namespace helengine::psvita::rendering {
 
     /// Attaches one uploaded native PS Vita texture allocation to this runtime texture wrapper.
     void PsVitaGpuTexture::SetNativeTexture(vita2d_texture* nativeTexture, std::uint32_t width, std::uint32_t height) {
+        if (NativeUpload != nullptr) {
+            throw std::logic_error("PS Vita GPU texture cannot replace a live native upload.");
+        }
         if (NativeTexture != nullptr && NativeTexture != nativeTexture) {
             vita2d_free_texture(NativeTexture);
         }
@@ -51,6 +56,19 @@ namespace helengine::psvita::rendering {
         Width = width;
         Height = height;
         Uploaded = nativeTexture != nullptr;
+    }
+
+    /// Takes ownership of a mapped descriptor after all upload operations have completed successfully.
+    void PsVitaGpuTexture::SetNativeUpload(std::unique_ptr<PsVitaNativeTextureUpload>&& upload,
+        std::uint32_t width, std::uint32_t height) {
+        if (NativeTexture != nullptr || upload == nullptr || upload->GetTexture() == nullptr) {
+            throw std::logic_error("PS Vita GPU texture requires an empty owner and completed native upload.");
+        }
+        NativeTexture = upload->GetTexture();
+        Width = width;
+        Height = height;
+        Uploaded = true;
+        NativeUpload = std::move(upload);
     }
 }
 

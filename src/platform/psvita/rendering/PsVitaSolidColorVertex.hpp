@@ -10,7 +10,8 @@ namespace helengine::psvita::rendering {
         float PositionX = 0.0f;
         float PositionY = 0.0f;
         std::uint32_t ColorAbgr = 0u;
-        std::uint16_t RenderOrder = 0u;
+        /// Preserves the camera and request ordinal when solid and textured command streams are merged.
+        std::uint64_t RenderOrder = 0u;
     };
 }
 

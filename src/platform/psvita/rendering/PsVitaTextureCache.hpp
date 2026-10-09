@@ -30,6 +30,9 @@ namespace helengine::psvita::rendering {
         /// Flushes deferred PS Vita runtime texture deletions once the renderer reaches a safe boundary.
         void FlushReleasedTextures();
 
+        /// Gets whether a texture has entered deferred retirement and cannot receive further uploads or mutations.
+        bool IsPendingRelease(const PsVitaRuntimeTexture* texture) const;
+
     private:
         /// Creates one uncached PS Vita runtime texture from the authored texture asset.
         PsVitaRuntimeTexture* CreateTexture(TextureAsset* data) const;

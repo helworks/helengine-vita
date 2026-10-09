@@ -1,4 +1,6 @@
 #include "platform/psvita/rendering/PsVitaGxmRenderer.hpp"
+#include "platform/psvita/rendering/PsVitaNativeTextureUpload.hpp"
+#include "platform/psvita/rendering/PsVitaGxmInitialization.hpp"
 
 #include <cstdio>
 #include <cstring>
@@ -71,6 +73,11 @@ namespace helengine::psvita::rendering {
             return false;
         }
 
+        if (!ConfigurePsVitaNativeYuvProfiles()) {
+            vita2d_fini();
+            throw std::runtime_error("PS Vita GXM rejected the native BT.601 YUV selector profiles.");
+        }
+
         if (EnableRuntimeCompiledSolidColorProgram && !SolidColorProgram.Initialize()) {
             vita2d_fini();
             return false;
@@ -80,6 +87,14 @@ namespace helengine::psvita::rendering {
         FrameBegun = false;
         SubmittedQuadCount = 0u;
         return true;
+    }
+
+    bool PsVitaGxmRenderer::IsMainFrameBegun() const {
+        return FrameBegun;
+    }
+
+    bool PsVitaGxmRenderer::IsShadowDepthPassActive() const {
+        return ShadowMap.IsDepthPassActive();
     }
 
     /// Shuts down the native renderer state and releases any owned frame resources.
@@ -520,26 +535,20 @@ namespace helengine::psvita::rendering {
             textureWidth = gpuTexture->GetWidth();
             textureHeight = gpuTexture->GetHeight();
         }
-        SceGxmTexture diffuseGxmTexture;
-        int textureInitializationResult = sceGxmTextureInitLinear(
-            &diffuseGxmTexture,
-            vita2d_texture_get_datap(nativeTexture),
-            vita2d_texture_get_format(nativeTexture),
-            textureWidth,
-            textureHeight,
-            0u);
-        if (textureInitializationResult < 0) {
-            throw std::runtime_error("PS Vita Forward Standard Shader failed to initialize its fragment texture binding. sceGxmTextureInitLinear="
-                + std::to_string(textureInitializationResult));
-        }
+        // The descriptor also carries native memory layout and palette address;
+        // reconstructing a Linear descriptor would reinterpret native payloads.
+        SceGxmTexture diffuseGxmTexture = nativeTexture->gxm_tex;
 
-        int minimumFilterResult = sceGxmTextureSetMinFilter(&diffuseGxmTexture, SCE_GXM_TEXTURE_FILTER_LINEAR);
+        const SceGxmTextureFilter diffuseFilter = diffuseTexture != nullptr && diffuseTexture->HasNativePayload()
+            && RequiresNativeTexturePointSampling(diffuseTexture->GetNativeLayout())
+            ? SCE_GXM_TEXTURE_FILTER_POINT : SCE_GXM_TEXTURE_FILTER_LINEAR;
+        int minimumFilterResult = sceGxmTextureSetMinFilter(&diffuseGxmTexture, diffuseFilter);
         if (minimumFilterResult < 0) {
             throw std::runtime_error("PS Vita Forward Standard Shader failed to configure its fragment texture minimum filter. sceGxmTextureSetMinFilter="
                 + std::to_string(minimumFilterResult));
         }
 
-        int magnificationFilterResult = sceGxmTextureSetMagFilter(&diffuseGxmTexture, SCE_GXM_TEXTURE_FILTER_LINEAR);
+        int magnificationFilterResult = sceGxmTextureSetMagFilter(&diffuseGxmTexture, diffuseFilter);
         if (magnificationFilterResult < 0) {
             throw std::runtime_error("PS Vita Forward Standard Shader failed to configure its fragment texture magnification filter. sceGxmTextureSetMagFilter="
                 + std::to_string(magnificationFilterResult));
@@ -568,6 +577,13 @@ namespace helengine::psvita::rendering {
             gpuVertices[vertexIndex].Position = positions[vertexIndex];
             gpuVertices[vertexIndex].Normal = normals[vertexIndex];
             gpuVertices[vertexIndex].TexCoord = texCoords[vertexIndex];
+            if (diffuseTexture != nullptr && diffuseTexture->HasNativePayload()
+                && diffuseTexture->GetNativeLayout().Type == 0u) {
+                gpuVertices[vertexIndex].TexCoord.X *= static_cast<float>(diffuseTexture->GetTextureWidthPixels())
+                    / static_cast<float>(textureWidth);
+                gpuVertices[vertexIndex].TexCoord.Y *= static_cast<float>(diffuseTexture->GetTextureHeightPixels())
+                    / static_cast<float>(textureHeight);
+            }
         }
         std::memcpy(gpuIndices, indices, sizeof(std::uint32_t) * static_cast<std::size_t>(indexCount));
 
@@ -749,6 +765,19 @@ namespace helengine::psvita::rendering {
             return;
         }
 
+        if (runtimeTexture->HasNativePayload()) {
+            const auto& layout = runtimeTexture->GetNativeLayout();
+            auto upload = std::make_unique<PsVitaNativeTextureUpload>();
+            upload->Initialize(layout, runtimeTexture->GetNativePixels().data(), runtimeTexture->GetNativePixels().size(),
+                runtimeTexture->GetNativePalette().data(), runtimeTexture->GetNativePalette().size());
+            auto gpuTexture = std::make_unique<PsVitaGpuTexture>();
+            gpuTexture->SetNativeUpload(std::move(upload),
+                layout.Type == 0u ? layout.StorageWidth : layout.Width,
+                layout.Type == 0u ? layout.StorageHeight : layout.Height);
+            runtimeTexture->SetGpuTexture(std::move(gpuTexture));
+            return;
+        }
+
         std::uint32_t textureWidth = runtimeTexture->GetTextureWidthPixels();
         std::uint32_t textureHeight = runtimeTexture->GetTextureHeightPixels();
         std::uint32_t nativeTextureWidth = CalculatePaddedTextureDimension(textureWidth);
@@ -819,6 +848,8 @@ namespace helengine::psvita::rendering {
         if (gpuTexture == nullptr || !gpuTexture->IsUploaded() || gpuTexture->GetNativeTexture() == nullptr) {
             return;
         }
+
+        BindPsVitaFragmentTexture(vita2d_get_context(), 0u, &gpuTexture->GetNativeTexture()->gxm_tex);
 
         unsigned int colorAbgr = queuedQuad.Vertices[0].ColorAbgr;
         float textureUScale = 1.0f;
