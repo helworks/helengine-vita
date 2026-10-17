@@ -11,6 +11,7 @@
 #include <vita2d.h>
 
 #include "platform/psvita/rendering/PsVitaGxmMemoryBlockSize.hpp"
+#include "platform/psvita/rendering/PsVitaGxmInitialization.hpp"
 
 namespace helengine::psvita::rendering {
     void BindPsVitaFragmentTexture(SceGxmContext* context, std::uint32_t textureIndex, const SceGxmTexture* texture) {
@@ -65,6 +66,10 @@ namespace helengine::psvita::rendering {
         if (pixels == nullptr || pixelLength != layout.TexelLength
             || paletteLength != layout.PaletteLength || (paletteLength != 0 && palette == nullptr)) {
             throw std::invalid_argument("PS Vita native texture upload requires its exact validated payload.");
+        }
+
+        if ((layout.Format & 0xff000000u) == 0x84000000u && !ArePsVitaExtendedTextureFormatsEnabled()) {
+            throw std::runtime_error("PS Vita ETC1 upload requires an explicitly initialized extended GXM context.");
         }
 
         Texture = static_cast<vita2d_texture*>(std::calloc(1, sizeof(vita2d_texture)));

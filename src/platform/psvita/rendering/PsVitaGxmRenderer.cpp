@@ -73,6 +73,8 @@ namespace helengine::psvita::rendering {
             return false;
         }
 
+        ValidatePsVitaGxmInitialization();
+
         if (!ConfigurePsVitaNativeYuvProfiles()) {
             vita2d_fini();
             throw std::runtime_error("PS Vita GXM rejected the native BT.601 YUV selector profiles.");

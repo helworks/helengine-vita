@@ -20,6 +20,8 @@ static std::map<int, std::vector<std::uint8_t>> Blocks;
 static int NextUid = 1, MapCalls = 0, UnmapCalls = 0, FailMapAt = 0, WaitCalls = 0, PaletteCalls = 0;
 static SceGxmInitializeParams CapturedInitialize {};
 static const SceGxmInitializeParams* CapturedInitializePointer = nullptr;
+/// Separates ordinary and extended initializer calls and injects a real SDK initialization failure.
+static int InitializeResult = 123, OrdinaryInitializeCalls = 0, ExtendedInitializeCalls = 0;
 static SceGxmContext Context;
 static int ProfileCalls = 0, FailProfileIndex = -1;
 static std::vector<unsigned> SceneEvents;
@@ -73,9 +75,16 @@ int sceGxmSetYuvProfile(SceGxmContext* context, unsigned index, unsigned profile
     return static_cast<int>(index) == FailProfileIndex ? -1 : 0;
 }
 extern "C" int __real_sceGxmInitialize(const SceGxmInitializeParams* params) {
+    ++OrdinaryInitializeCalls;
     CapturedInitializePointer = params;
     if (params != nullptr) CapturedInitialize = *params;
-    return 123;
+    return InitializeResult;
+}
+int sceGxmVshInitialize(const SceGxmInitializeParams* params) {
+    ++ExtendedInitializeCalls;
+    CapturedInitializePointer = params;
+    CapturedInitialize = *params;
+    return InitializeResult;
 }
 extern "C" int __wrap_sceGxmInitialize(const SceGxmInitializeParams*);
 
@@ -92,12 +101,41 @@ static void UploadRuntime(PsVitaRuntimeTexture& texture) {
 
 /// Verifies actual production mapped uploads, palette ownership, region synchronization and retirement against SDK spies.
 int main() {
-    SceGxmInitializeParams original {0x200, 3, nullptr, 72, 4096};
+    SceGxmInitializeParams original {0, 3, nullptr, 72, 262144};
     assert(__wrap_sceGxmInitialize(&original) == 123);
-    assert(original.flags == 0x200 && CapturedInitialize.flags == 0x210);
+    assert(original.flags == 0 && CapturedInitialize.flags == 0);
+    assert(OrdinaryInitializeCalls == 1 && ExtendedInitializeCalls == 0);
+    ValidatePsVitaGxmInitialization();
+    assert(!ArePsVitaExtendedTextureFormatsEnabled());
+    PsVitaNativeTextureLayout extendedLayout;
+    assert(TryBuildNativeTextureLayout(0x84000000u, 0u, 4, 4, 0, extendedLayout));
+    std::vector<std::uint8_t> extendedPixels(extendedLayout.TexelLength, 0);
+    bool extendedUploadRejected = false;
+    try {
+        PsVitaNativeTextureUpload upload;
+        upload.Initialize(extendedLayout, extendedPixels.data(), extendedPixels.size(), nullptr, 0);
+    } catch (const std::runtime_error&) { extendedUploadRejected = true; }
+    assert(extendedUploadRejected && Blocks.empty());
     assert(CapturedInitialize.displayQueueMaxPendingCount == 3 && CapturedInitialize.displayQueueCallbackDataSize == 72);
-    assert(CapturedInitialize.parameterBufferSize == 4096);
+    assert(CapturedInitialize.parameterBufferSize == 262144);
     assert(__wrap_sceGxmInitialize(nullptr) == 123 && CapturedInitializePointer == nullptr);
+    InitializeResult = -1;
+    assert(__wrap_sceGxmInitialize(&original) == -1);
+    bool initializationRejected = false;
+    try { ValidatePsVitaGxmInitialization(); } catch (const std::runtime_error&) { initializationRejected = true; }
+    assert(initializationRejected && !ArePsVitaExtendedTextureFormatsEnabled());
+    InitializeResult = 123;
+    original.flags = SCE_GXM_INITIALIZE_FLAG_EXTENDED_FORMAT;
+    assert(__wrap_sceGxmInitialize(&original) == 123);
+    assert(ExtendedInitializeCalls == 1 && CapturedInitialize.flags == original.flags);
+    ValidatePsVitaGxmInitialization();
+    assert(ArePsVitaExtendedTextureFormatsEnabled());
+    {
+        PsVitaNativeTextureUpload upload;
+        upload.Initialize(extendedLayout, extendedPixels.data(), extendedPixels.size(), nullptr, 0);
+        assert(upload.GetTexture() != nullptr);
+    }
+    assert(Blocks.empty());
     assert(ConfigurePsVitaNativeYuvProfiles() && ProfileCalls == 2);
     FailProfileIndex = 1;
     assert(!ConfigurePsVitaNativeYuvProfiles() && ProfileCalls == 4);

@@ -278,16 +278,26 @@ namespace helengine::psvita {
     /// Advances the runtime update and draw loop while preserving the milestone boot frame.
     void PsVitaBootHost::RunMainLoop() {
         bool firstFrame = true;
+        unsigned int diagnosticFrameIndex = 0u;
         while (true) {
+            if (diagnosticFrameIndex == 1u) {
+                AppendBootTrace("RunMainLoop: second update");
+            }
             if (firstFrame) {
                 AppendBootTrace("RunMainLoop: first update");
             }
             EngineCore->Update();
             static_cast<PsVitaRenderManager3D*>(EngineRenderManager3D)->PrepareShadowMaps();
+            if (diagnosticFrameIndex == 1u) {
+                AppendBootTrace("RunMainLoop: second begin frame");
+            }
             if (firstFrame) {
                 AppendBootTrace("RunMainLoop: first begin frame");
             }
             GxmRenderer->BeginFrame(ResolveActiveCameraClearColorAbgr());
+            if (diagnosticFrameIndex == 1u) {
+                AppendBootTrace("RunMainLoop: second draw");
+            }
             if (firstFrame) {
                 AppendBootTrace("RunMainLoop: first draw3d");
             }
@@ -296,10 +306,16 @@ namespace helengine::psvita {
                 AppendBootTrace("RunMainLoop: first draw2d");
             }
             EngineRenderManager2D->Draw();
+            if (diagnosticFrameIndex == 1u) {
+                AppendBootTrace("RunMainLoop: second present");
+            }
             if (firstFrame) {
                 AppendBootTrace("RunMainLoop: first present");
             }
             PresentFrame();
+            if (diagnosticFrameIndex == 1u) {
+                AppendBootTrace("RunMainLoop: second present complete");
+            }
             if (firstFrame) {
                 AppendBootTrace("RunMainLoop: first present complete");
                 AppendBootTrace("RunMainLoop: first release flush");
@@ -312,6 +328,16 @@ namespace helengine::psvita {
                 AppendBootTrace("RunMainLoop: first frame boundary");
             }
             EngineCore->CompleteFrameBoundary();
+            if (diagnosticFrameIndex == 0u) {
+                AppendBootTrace("RunMainLoop: first frame boundary complete");
+            } else if (diagnosticFrameIndex == 1u) {
+                AppendBootTrace("RunMainLoop: second frame complete");
+            } else if (diagnosticFrameIndex == 59u) {
+                AppendBootTrace("RunMainLoop: sixty frames complete");
+            }
+            if (diagnosticFrameIndex < 60u) {
+                ++diagnosticFrameIndex;
+            }
             if (firstFrame) {
                 firstFrame = false;
             }

@@ -1,3 +1,5 @@
+#include "SpriteQuad2D.hpp"
+#include "Batch2DGeometry.hpp"
 #include "platform/psvita/rendering/PsVitaRenderManager2D.hpp"
 
 #include <algorithm>
@@ -320,36 +322,9 @@ namespace helengine::psvita {
             return;
         }
 
-        ::int2 spriteSizeValue = sprite->get_Size();
-        const int32_t spriteWidthPixels = spriteSizeValue.X;
-        const int32_t spriteHeightPixels = spriteSizeValue.Y;
-        double spriteWidth = spriteWidthPixels > 0
-            ? static_cast<double>(spriteWidthPixels)
-            : static_cast<double>(texture->get_Width());
-        double spriteHeight = spriteHeightPixels > 0
-            ? static_cast<double>(spriteHeightPixels)
-            : static_cast<double>(texture->get_Height());
-        if (spriteWidth <= 0.0 || spriteHeight <= 0.0) {
-            return;
-        }
-
-        ::Entity* parent = sprite->get_Parent();
-        float3 position = parent->get_Position();
-        float3 scale = parent->get_Scale();
+        const SpriteQuad2D quad = Batch2DGeometry::ResolveSpriteQuad(sprite);
         float4 sourceRect = sprite->get_SourceRect();
         byte4 color = sprite->get_Color();
-        spriteWidth *= static_cast<double>(scale.X);
-        spriteHeight *= static_cast<double>(scale.Y);
-        float3 rotatedRight = float4::RotateVector(float3::get_UnitX(), parent->get_Orientation());
-        double rotation = std::atan2(
-            static_cast<double>(rotatedRight.Y),
-            static_cast<double>(rotatedRight.X));
-        double halfWidth = spriteWidth * 0.5;
-        double halfHeight = spriteHeight * 0.5;
-        double centerX = static_cast<double>(position.X) + halfWidth;
-        double centerY = static_cast<double>(position.Y) + halfHeight;
-        double sine = std::sin(rotation);
-        double cosine = std::cos(rotation);
         std::uint32_t packedColor = (static_cast<std::uint32_t>(color.W) << 24)
             | (static_cast<std::uint32_t>(color.Z) << 16)
             | (static_cast<std::uint32_t>(color.Y) << 8)
@@ -360,35 +335,26 @@ namespace helengine::psvita {
         queuedQuad.RenderOrder = ComposeRenderOrder(ActiveCameraRenderOrder, NextDrawRequestOrdinal());
         queuedQuad.UsesLogicalTextureExtents = true;
 
-        double topLeftOffsetX = -halfWidth;
-        double topLeftOffsetY = -halfHeight;
-        double topRightOffsetX = halfWidth;
-        double topRightOffsetY = -halfHeight;
-        double bottomLeftOffsetX = -halfWidth;
-        double bottomLeftOffsetY = halfHeight;
-        double bottomRightOffsetX = halfWidth;
-        double bottomRightOffsetY = halfHeight;
-
-        queuedQuad.Vertices[0].PositionX = static_cast<float>(centerX + (topLeftOffsetX * cosine) - (topLeftOffsetY * sine));
-        queuedQuad.Vertices[0].PositionY = static_cast<float>(centerY + (topLeftOffsetX * sine) + (topLeftOffsetY * cosine));
+        queuedQuad.Vertices[0].PositionX = quad.TopLeft.X;
+        queuedQuad.Vertices[0].PositionY = quad.TopLeft.Y;
         queuedQuad.Vertices[0].TextureU = sourceRect.X;
         queuedQuad.Vertices[0].TextureV = sourceRect.Y;
         queuedQuad.Vertices[0].ColorAbgr = packedColor;
 
-        queuedQuad.Vertices[1].PositionX = static_cast<float>(centerX + (topRightOffsetX * cosine) - (topRightOffsetY * sine));
-        queuedQuad.Vertices[1].PositionY = static_cast<float>(centerY + (topRightOffsetX * sine) + (topRightOffsetY * cosine));
+        queuedQuad.Vertices[1].PositionX = quad.TopRight.X;
+        queuedQuad.Vertices[1].PositionY = quad.TopRight.Y;
         queuedQuad.Vertices[1].TextureU = sourceRect.X + sourceRect.Z;
         queuedQuad.Vertices[1].TextureV = sourceRect.Y;
         queuedQuad.Vertices[1].ColorAbgr = packedColor;
 
-        queuedQuad.Vertices[2].PositionX = static_cast<float>(centerX + (bottomLeftOffsetX * cosine) - (bottomLeftOffsetY * sine));
-        queuedQuad.Vertices[2].PositionY = static_cast<float>(centerY + (bottomLeftOffsetX * sine) + (bottomLeftOffsetY * cosine));
+        queuedQuad.Vertices[2].PositionX = quad.BottomLeft.X;
+        queuedQuad.Vertices[2].PositionY = quad.BottomLeft.Y;
         queuedQuad.Vertices[2].TextureU = sourceRect.X;
         queuedQuad.Vertices[2].TextureV = sourceRect.Y + sourceRect.W;
         queuedQuad.Vertices[2].ColorAbgr = packedColor;
 
-        queuedQuad.Vertices[3].PositionX = static_cast<float>(centerX + (bottomRightOffsetX * cosine) - (bottomRightOffsetY * sine));
-        queuedQuad.Vertices[3].PositionY = static_cast<float>(centerY + (bottomRightOffsetX * sine) + (bottomRightOffsetY * cosine));
+        queuedQuad.Vertices[3].PositionX = quad.BottomRight.X;
+        queuedQuad.Vertices[3].PositionY = quad.BottomRight.Y;
         queuedQuad.Vertices[3].TextureU = sourceRect.X + sourceRect.Z;
         queuedQuad.Vertices[3].TextureV = sourceRect.Y + sourceRect.W;
         queuedQuad.Vertices[3].ColorAbgr = packedColor;

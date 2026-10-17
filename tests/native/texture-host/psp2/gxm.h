@@ -25,6 +25,7 @@ struct SceGxmInitializeParams {
     unsigned parameterBufferSize;
 };
 constexpr unsigned SCE_GXM_INITIALIZE_FLAG_EXTENDED_FORMAT = 0x10;
+int sceGxmVshInitialize(const SceGxmInitializeParams*);
 constexpr unsigned SCE_GXM_TEXTURE_LINEAR = 0x60000000;
 constexpr unsigned SCE_GXM_TEXTURE_SWIZZLED = 0;
 constexpr unsigned SCE_GXM_TEXTURE_SWIZZLED_ARBITRARY = 0xa0000000;
