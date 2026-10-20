@@ -955,7 +955,7 @@ namespace helengine::psvita {
         }
 
         auto* runtimeSubmeshes = new Array<rendering::PsVitaRuntimeSubmesh*>(1);
-        (*runtimeSubmeshes)[0] = new rendering::PsVitaRuntimeSubmesh(String::Empty, 0, elementCount, std::move(defaultTriangleIndices));
+        (*runtimeSubmeshes)[0] = new rendering::PsVitaRuntimeSubmesh(String::get_Empty(), 0, elementCount, std::move(defaultTriangleIndices));
         return runtimeSubmeshes;
     }
 
