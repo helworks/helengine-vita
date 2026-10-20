@@ -405,7 +405,7 @@ public sealed class PsVitaPlatformAssetBuilderTests {
             new Dictionary<string, string> {
                 ["base-color"] = "#336699",
                 ["texture-id"] = "Textures/Checker"
-            }));
+            }, numericPolicy: global::helengine.NumericPrecisionPolicy.Default));
 
         ShaderMaterialAsset materialAsset = Assert.IsType<ShaderMaterialAsset>(global::helengine.files.AssetSerializer.DeserializeFromBytes(result.CookedMaterialBytes));
         Assert.Equal("Textures/Checker", materialAsset.DiffuseTextureAssetId);
@@ -442,7 +442,7 @@ public sealed class PsVitaPlatformAssetBuilderTests {
                 ["fragment-artifact-hash"] = "FRAGMENTHASH",
                 ["parameter-contract"] = "1",
                 ["base-color"] = "#ffffffff"
-            }));
+            }, numericPolicy: global::helengine.NumericPrecisionPolicy.Default));
 
         PsVitaCompiledShaderMaterialAsset materialAsset = new PsVitaCompiledShaderMaterialBinarySerializer().Deserialize(result.CookedMaterialBytes);
         Assert.Equal("ForwardSolidColorShader", materialAsset.ShaderAssetId);
@@ -479,7 +479,7 @@ public sealed class PsVitaPlatformAssetBuilderTests {
                 ["pixel-program"] = "ForwardStandardShader.ps",
                 ["variant"] = "Mesh",
                 ["base-color"] = "#ffffffff"
-            }));
+            }, numericPolicy: global::helengine.NumericPrecisionPolicy.Default));
 
         PsVitaCompiledShaderMaterialAsset materialAsset = new PsVitaCompiledShaderMaterialBinarySerializer().Deserialize(result.CookedMaterialBytes);
         Assert.Equal(1u, materialAsset.ParameterContractVersion);
@@ -505,7 +505,7 @@ public sealed class PsVitaPlatformAssetBuilderTests {
                 ["pixel-program"] = "ForwardStandardShader.ps",
                 ["variant"] = "default",
                 ["base-color"] = "#ffffffff"
-            }));
+            }, numericPolicy: global::helengine.NumericPrecisionPolicy.Default));
 
         PsVitaCompiledShaderMaterialAsset materialAsset = new PsVitaCompiledShaderMaterialBinarySerializer().Deserialize(result.CookedMaterialBytes);
         Assert.False(materialAsset.RequiresDiffuseTexture);
@@ -532,7 +532,7 @@ public sealed class PsVitaPlatformAssetBuilderTests {
                 ["pixel-program"] = "ForwardStandardShader.ps",
                 ["variant"] = "default",
                 ["base-color"] = "#ffffffff"
-            }));
+            }, numericPolicy: global::helengine.NumericPrecisionPolicy.Default));
 
         PsVitaCompiledShaderMaterialAsset materialAsset = new PsVitaCompiledShaderMaterialBinarySerializer().Deserialize(result.CookedMaterialBytes);
         PlatformShaderDependency dependency = Assert.Single(result.ReferencedShaderDependencies);
