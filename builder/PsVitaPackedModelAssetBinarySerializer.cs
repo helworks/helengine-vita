@@ -58,8 +58,8 @@ public static class PsVitaPackedModelAssetBinarySerializer {
 
         writer.Write(asset.TexCoords.Length);
         for (int texCoordIndex = 0; texCoordIndex < asset.TexCoords.Length; texCoordIndex++) {
-            writer.Write(asset.TexCoords[texCoordIndex].X);
-            writer.Write(asset.TexCoords[texCoordIndex].Y);
+            writer.Write((float)asset.TexCoords[texCoordIndex].X);
+            writer.Write((float)asset.TexCoords[texCoordIndex].Y);
         }
 
         WriteFloat3(writer, asset.BoundsMin);
@@ -229,9 +229,9 @@ public static class PsVitaPackedModelAssetBinarySerializer {
     /// <param name="writer">Binary writer receiving the value.</param>
     /// <param name="value">Vector value to encode.</param>
     static void WriteFloat3(BinaryWriter writer, float3 value) {
-        writer.Write(value.X);
-        writer.Write(value.Y);
-        writer.Write(value.Z);
+        writer.Write((float)value.X);
+        writer.Write((float)value.Y);
+        writer.Write((float)value.Z);
     }
 
     /// <summary>

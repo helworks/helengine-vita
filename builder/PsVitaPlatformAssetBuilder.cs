@@ -894,10 +894,10 @@ public sealed class PsVitaPlatformAssetBuilder : IPlatformAssetBuilder, IShaderB
     static byte[] CreateFloat4ConstantBufferData(float4 value) {
         using MemoryStream stream = new();
         using EngineBinaryWriter writer = EngineBinaryWriter.Create(stream, EngineBinaryEndianness.LittleEndian);
-        writer.WriteSingle(value.X);
-        writer.WriteSingle(value.Y);
-        writer.WriteSingle(value.Z);
-        writer.WriteSingle(value.W);
+        writer.WriteSingle((float)value.X);
+        writer.WriteSingle((float)value.Y);
+        writer.WriteSingle((float)value.Z);
+        writer.WriteSingle((float)value.W);
         return stream.ToArray();
     }
 }
