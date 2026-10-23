@@ -449,7 +449,7 @@ public sealed class PsVitaPlatformAssetBuilder : IPlatformAssetBuilder, IShaderB
                 string outputRelative = ResolveCookedRelativePath(item.OutputRelativePath);
                 prepared.Add(new PsVitaPreparedPayload {
                     ItemId = item.OutputLogicalArtifactId, OutputRelativePath = outputRelative,
-                    StagedRelativePath = ResolveStagedContentRelativePath(outputRelative).Replace('\\', '/'), Bytes = ExecutePlatformCookWorkItem(item)
+                    StagedRelativePath = ResolveStagedContentRelativePath(outputRelative).Replace('\\', '/'), Bytes = ExecutePlatformCookWorkItem(item, request.NumericPolicy)
                 });
             }
         } catch (Exception exception) when (exception is not OperationCanceledException) {
@@ -519,8 +519,9 @@ public sealed class PsVitaPlatformAssetBuilder : IPlatformAssetBuilder, IShaderB
     /// Executes one builder-owned Vita cook work item and returns the cooked runtime payload bytes.
     /// </summary>
     /// <param name="workItem">Builder-owned Vita cook work item to execute.</param>
+    /// <param name="numericPolicy">Target numeric policy encoded in the final texture container.</param>
     /// <returns>Cooked runtime payload bytes.</returns>
-    byte[] ExecutePlatformCookWorkItem(PlatformCookWorkItem workItem) {
+    byte[] ExecutePlatformCookWorkItem(PlatformCookWorkItem workItem, NumericPrecisionPolicy numericPolicy) {
         if (workItem == null) {
             throw new ArgumentNullException(nameof(workItem));
         } else if (!string.Equals(workItem.TargetPlatformId, Definition.PlatformId, StringComparison.OrdinalIgnoreCase)) {
@@ -532,10 +533,10 @@ public sealed class PsVitaPlatformAssetBuilder : IPlatformAssetBuilder, IShaderB
         string assetId = ResolveCookWorkItemAssetId(workItem);
         if (string.Equals(workItem.SourceAssetKind, "texture", StringComparison.OrdinalIgnoreCase)) {
             using TextureAsset cookedTextureAsset = PlatformCookSourceProcessor.CookTexture(ResolveSourcePath(workItem.SourceAssetPath), assetId, settings);
-            return global::helengine.files.AssetSerializer.SerializeToBytes(cookedTextureAsset);
+            return global::helengine.files.AssetSerializer.SerializeToBytes(cookedTextureAsset, numericPolicy);
         } else if (string.Equals(workItem.SourceAssetKind, "font-atlas-texture", StringComparison.OrdinalIgnoreCase)) {
             using TextureAsset cookedAtlasTextureAsset = PlatformCookSourceProcessor.CookFontAtlasTexture(ResolveSourcePath(workItem.SourceAssetPath), assetId, settings);
-            return global::helengine.files.AssetSerializer.SerializeToBytes(cookedAtlasTextureAsset);
+            return global::helengine.files.AssetSerializer.SerializeToBytes(cookedAtlasTextureAsset, numericPolicy);
         }
 
         throw new InvalidOperationException($"Unsupported Vita platform cook work item source kind '{workItem.SourceAssetKind}'.");

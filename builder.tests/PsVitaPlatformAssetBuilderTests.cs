@@ -690,22 +690,37 @@ public sealed class PsVitaPlatformAssetBuilderTests {
     }
 
     /// <summary>
-    /// Verifies the Vita builder executes one builder-owned font-atlas cook work item and writes the cooked atlas beside the packaged font.
+    /// Verifies the Vita builder preserves the target policy when staging texture and font-atlas work items.
     /// </summary>
-    [Fact]
-    public async Task BuildAsync_whenManifestCarriesFontAtlasCookWorkItem_emits_external_cooked_font_atlas() {
-        string workingRoot = Path.Combine(Path.GetTempPath(), "helengine-psvita-builder-tests-" + Guid.NewGuid().ToString("N"));
+    /// <param name="fontAtlas">Whether to cook the embedded font atlas or a serialized texture source.</param>
+    /// <param name="storageBits">Target numeric policy width required by the runtime texture reader.</param>
+    [Theory]
+    [InlineData(true, 32)]
+    [InlineData(false, 32)]
+    [InlineData(true, 64)]
+    [InlineData(false, 64)]
+    public async Task BuildAsync_whenManifestCarriesTextureCookWorkItem_preservesTargetNumericPolicy(bool fontAtlas, int storageBits) {
+        NumericPrecisionPolicy numericPolicy = new(storageBits, storageBits);
+        string workingRoot = Path.Combine(Path.GetTempPath(), "helengine-psvita-policy-test");
         string outputRoot = Path.Combine(workingRoot, "out");
         string sourceRoot = Path.Combine(workingRoot, "project");
         string generatedCoreRoot = Path.Combine(workingRoot, "generated-core");
         string sceneSourcePath = Path.Combine(sourceRoot, "cooked", "scenes", "startup.hasset");
-        string sourceFontPath = Path.Combine(sourceRoot, "fonts", "default.hefont");
+        string sourceFontPath = Path.Combine(sourceRoot, "fonts", fontAtlas ? "default.hefont" : "default.hetex");
 
         Directory.CreateDirectory(Path.GetDirectoryName(sceneSourcePath));
         Directory.CreateDirectory(Path.GetDirectoryName(sourceFontPath));
         Directory.CreateDirectory(generatedCoreRoot);
         File.WriteAllBytes(sceneSourcePath, CreateCookedSceneBytes());
-        File.WriteAllBytes(sourceFontPath, CreateCookedFontBytes());
+        if (fontAtlas) {
+            File.WriteAllBytes(sourceFontPath, CreateCookedFontBytes());
+        } else {
+            using TextureAsset sourceTexture = new() {
+                Width = 1, Height = 1, ColorFormat = TextureAssetColorFormat.Rgba32,
+                AlphaPrecision = TextureAssetAlphaPrecision.A8, Colors = [255, 255, 255, 255]
+            };
+            File.WriteAllBytes(sourceFontPath, global::helengine.files.AssetSerializer.SerializeToBytes(sourceTexture));
+        }
 
         string previousDirectory = Directory.GetCurrentDirectory();
         try {
@@ -736,7 +751,7 @@ public sealed class PsVitaPlatformAssetBuilderTests {
                     new PlatformCookWorkItem(
                         "psvita:font-atlas-texture:cooked/fonts/default.hetex",
                         sourceFontPath,
-                        "font-atlas-texture",
+                        fontAtlas ? "font-atlas-texture" : "texture",
                         "psvita",
                         "runtime-texture",
                         "cooked/fonts/default.hetex",
@@ -769,7 +784,7 @@ public sealed class PsVitaPlatformAssetBuilderTests {
                 "default",
                 new Dictionary<string, string>(),
                 new Dictionary<string, string>(),
-                new Dictionary<string, string>(),
+                new Dictionary<string, string> { [PlatformCodegenSettingIds.RealStorageBits] = storageBits.ToString(), [PlatformCodegenSettingIds.RealArithmeticBits] = storageBits.ToString() },
                 generatedCoreRoot,
                 "psvita-memory-card",
                 "vpk-package");
@@ -781,9 +796,13 @@ public sealed class PsVitaPlatformAssetBuilderTests {
 
             PlatformBuildReport report = await builder.BuildAsync(request, progressReporter, diagnosticReporter, CancellationToken.None);
 
-            Assert.True(report.Succeeded);
+            Assert.True(report.Succeeded, string.Join(" | ", diagnosticReporter.Diagnostics.Select(diagnostic => diagnostic.Message)));
             Assert.Empty(diagnosticReporter.Diagnostics);
-            Assert.True(File.Exists(Path.Combine(outputRoot, "cooked", "fonts", "default.hetex")));
+            using (FileStream textureStream = File.OpenRead(Path.Combine(outputRoot, "cooked", "fonts", "default.hetex"))) {
+                using TextureAsset texture = Assert.IsType<TextureAsset>(PackagedAssetBinarySerializer.Deserialize(textureStream, numericPolicy));
+                Assert.True(texture.Width > 0);
+                Assert.Equal(RuntimeAssetIdGenerator.Generate("fonts/default.hefont" + (fontAtlas ? "#atlas" : string.Empty)), texture.RuntimeAssetId);
+            }
             Assert.True(File.Exists(Path.Combine(nativeBuildExecutor.StagedContentRootPath, "fonts", "default.hetex")));
         } finally {
             Directory.SetCurrentDirectory(previousDirectory);
