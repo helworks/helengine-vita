@@ -17,6 +17,8 @@
 
 #if HELENGINE_PSVITA_HAS_GENERATED_CORE
 
+#include "RealEvaluation.hpp"
+
 namespace helengine::psvita::rendering {
     namespace {
         /// Keeps the legacy solid-color compatibility path disabled while the artifact-backed path is selected explicitly.
@@ -207,7 +209,7 @@ namespace helengine::psvita::rendering {
         }
         ShadowDepthProgramKey = key;
 
-        const std::size_t positionBytes = sizeof(::float3) * static_cast<std::size_t>(vertexCount);
+        const std::size_t positionBytes = sizeof(float) * 3u * static_cast<std::size_t>(vertexCount);
         const std::size_t indexOffset = (positionBytes + 7u) & ~static_cast<std::size_t>(7u);
         const std::size_t indexBytes = sizeof(std::uint32_t) * static_cast<std::size_t>(indexCount);
         if (indexOffset > std::numeric_limits<std::size_t>::max() - indexBytes) {
@@ -220,9 +222,14 @@ namespace helengine::psvita::rendering {
                 "PS Vita ShadowDepth Shader failed to allocate transient mesh memory: "
                 + submissionMemory->GetLastDiagnostic());
         }
-        ::float3* gpuPositions = static_cast<::float3*>(submissionMemory->GetData());
+        float* gpuPositions = static_cast<float*>(submissionMemory->GetData());
         std::uint32_t* gpuIndices = reinterpret_cast<std::uint32_t*>(static_cast<std::uint8_t*>(submissionMemory->GetData()) + indexOffset);
-        std::memcpy(gpuPositions, positions, sizeof(::float3) * static_cast<std::size_t>(vertexCount));
+        for (int32_t vertexIndex = 0; vertexIndex < vertexCount; ++vertexIndex) {
+            const std::size_t positionOffset = static_cast<std::size_t>(vertexIndex) * 3u;
+            gpuPositions[positionOffset] = static_cast<float>(RealEvaluation(positions[vertexIndex].X));
+            gpuPositions[positionOffset + 1u] = static_cast<float>(RealEvaluation(positions[vertexIndex].Y));
+            gpuPositions[positionOffset + 2u] = static_cast<float>(RealEvaluation(positions[vertexIndex].Z));
+        }
         std::memcpy(gpuIndices, indices, sizeof(std::uint32_t) * static_cast<std::size_t>(indexCount));
 
         SceGxmContext* context = ShadowDepthProgram.GetContext();
@@ -230,10 +237,10 @@ namespace helengine::psvita::rendering {
             throw std::runtime_error("PS Vita ShadowDepth Shader requires one active GXM context.");
         }
         const float matrixValues[16] = {
-            lightViewProjection.M11, lightViewProjection.M12, lightViewProjection.M13, lightViewProjection.M14,
-            lightViewProjection.M21, lightViewProjection.M22, lightViewProjection.M23, lightViewProjection.M24,
-            lightViewProjection.M31, lightViewProjection.M32, lightViewProjection.M33, lightViewProjection.M34,
-            lightViewProjection.M41, lightViewProjection.M42, lightViewProjection.M43, lightViewProjection.M44
+            static_cast<float>(RealEvaluation(lightViewProjection.M11)), static_cast<float>(RealEvaluation(lightViewProjection.M12)), static_cast<float>(RealEvaluation(lightViewProjection.M13)), static_cast<float>(RealEvaluation(lightViewProjection.M14)),
+            static_cast<float>(RealEvaluation(lightViewProjection.M21)), static_cast<float>(RealEvaluation(lightViewProjection.M22)), static_cast<float>(RealEvaluation(lightViewProjection.M23)), static_cast<float>(RealEvaluation(lightViewProjection.M24)),
+            static_cast<float>(RealEvaluation(lightViewProjection.M31)), static_cast<float>(RealEvaluation(lightViewProjection.M32)), static_cast<float>(RealEvaluation(lightViewProjection.M33)), static_cast<float>(RealEvaluation(lightViewProjection.M34)),
+            static_cast<float>(RealEvaluation(lightViewProjection.M41)), static_cast<float>(RealEvaluation(lightViewProjection.M42)), static_cast<float>(RealEvaluation(lightViewProjection.M43)), static_cast<float>(RealEvaluation(lightViewProjection.M44))
         };
         sceGxmSetVertexProgram(context, ShadowDepthProgram.GetVertexProgram());
         sceGxmSetFragmentProgram(context, ShadowDepthProgram.GetFragmentProgram());
@@ -301,9 +308,9 @@ namespace helengine::psvita::rendering {
         }
 
         for (std::size_t vertexIndex = 0; vertexIndex < vertices.size(); ++vertexIndex) {
-            drawVertices[vertexIndex].x = vertices[vertexIndex].X;
-            drawVertices[vertexIndex].y = vertices[vertexIndex].Y;
-            drawVertices[vertexIndex].z = vertices[vertexIndex].Z;
+            drawVertices[vertexIndex].x = static_cast<float>(RealEvaluation(vertices[vertexIndex].X));
+            drawVertices[vertexIndex].y = static_cast<float>(RealEvaluation(vertices[vertexIndex].Y));
+            drawVertices[vertexIndex].z = static_cast<float>(RealEvaluation(vertices[vertexIndex].Z));
             drawVertices[vertexIndex].color = 0xFFFFFFFFu;
         }
 
@@ -334,8 +341,8 @@ namespace helengine::psvita::rendering {
             return false;
         }
 
-        ::float3* gpuVisiblePositions = static_cast<::float3*>(vita2d_pool_memalign(
-            static_cast<unsigned int>(sizeof(::float3) * static_cast<std::size_t>(positionCount)),
+        float* gpuVisiblePositions = static_cast<float*>(vita2d_pool_memalign(
+            static_cast<unsigned int>(sizeof(float) * 3u * static_cast<std::size_t>(positionCount)),
             8u));
         if (gpuVisiblePositions == nullptr) {
             throw std::runtime_error("PS Vita solid-color mesh submission failed to allocate transient GPU-visible vertex memory.");
@@ -348,7 +355,12 @@ namespace helengine::psvita::rendering {
             throw std::runtime_error("PS Vita solid-color mesh submission failed to allocate transient GPU-visible index memory.");
         }
 
-        std::memcpy(gpuVisiblePositions, positions, sizeof(::float3) * static_cast<std::size_t>(positionCount));
+        for (int32_t vertexIndex = 0; vertexIndex < positionCount; ++vertexIndex) {
+            const std::size_t positionOffset = static_cast<std::size_t>(vertexIndex) * 3u;
+            gpuVisiblePositions[positionOffset] = static_cast<float>(RealEvaluation(positions[vertexIndex].X));
+            gpuVisiblePositions[positionOffset + 1u] = static_cast<float>(RealEvaluation(positions[vertexIndex].Y));
+            gpuVisiblePositions[positionOffset + 2u] = static_cast<float>(RealEvaluation(positions[vertexIndex].Z));
+        }
         std::memcpy(gpuVisibleIndices, indices, sizeof(std::uint32_t) * static_cast<std::size_t>(indexCount));
 
         SceGxmContext* context = SolidColorProgram.GetContext();
@@ -421,9 +433,11 @@ namespace helengine::psvita::rendering {
         }
 
         for (int32_t vertexIndex = 0; vertexIndex < vertexCount; ++vertexIndex) {
-            gpuVertices[vertexIndex].Position = positions[vertexIndex];
-            gpuVertices[vertexIndex].Normal = normals[vertexIndex];
-            gpuVertices[vertexIndex].TexCoord = ::float2(0.0f, 0.0f);
+            gpuVertices[vertexIndex] = {
+                { static_cast<float>(RealEvaluation(positions[vertexIndex].X)), static_cast<float>(RealEvaluation(positions[vertexIndex].Y)), static_cast<float>(RealEvaluation(positions[vertexIndex].Z)) },
+                { static_cast<float>(RealEvaluation(normals[vertexIndex].X)), static_cast<float>(RealEvaluation(normals[vertexIndex].Y)), static_cast<float>(RealEvaluation(normals[vertexIndex].Z)) },
+                { 0.0f, 0.0f }
+            };
         }
         std::memcpy(gpuIndices, indices, sizeof(std::uint32_t) * static_cast<std::size_t>(indexCount));
 
@@ -433,16 +447,16 @@ namespace helengine::psvita::rendering {
         }
 
         const float worldViewProjectionValues[16] = {
-            worldViewProjection.M11, worldViewProjection.M12, worldViewProjection.M13, worldViewProjection.M14,
-            worldViewProjection.M21, worldViewProjection.M22, worldViewProjection.M23, worldViewProjection.M24,
-            worldViewProjection.M31, worldViewProjection.M32, worldViewProjection.M33, worldViewProjection.M34,
-            worldViewProjection.M41, worldViewProjection.M42, worldViewProjection.M43, worldViewProjection.M44
+            static_cast<float>(RealEvaluation(worldViewProjection.M11)), static_cast<float>(RealEvaluation(worldViewProjection.M12)), static_cast<float>(RealEvaluation(worldViewProjection.M13)), static_cast<float>(RealEvaluation(worldViewProjection.M14)),
+            static_cast<float>(RealEvaluation(worldViewProjection.M21)), static_cast<float>(RealEvaluation(worldViewProjection.M22)), static_cast<float>(RealEvaluation(worldViewProjection.M23)), static_cast<float>(RealEvaluation(worldViewProjection.M24)),
+            static_cast<float>(RealEvaluation(worldViewProjection.M31)), static_cast<float>(RealEvaluation(worldViewProjection.M32)), static_cast<float>(RealEvaluation(worldViewProjection.M33)), static_cast<float>(RealEvaluation(worldViewProjection.M34)),
+            static_cast<float>(RealEvaluation(worldViewProjection.M41)), static_cast<float>(RealEvaluation(worldViewProjection.M42)), static_cast<float>(RealEvaluation(worldViewProjection.M43)), static_cast<float>(RealEvaluation(worldViewProjection.M44))
         };
         const float normalTransformValues[16] = {
-            normalTransform.M11, normalTransform.M12, normalTransform.M13, normalTransform.M14,
-            normalTransform.M21, normalTransform.M22, normalTransform.M23, normalTransform.M24,
-            normalTransform.M31, normalTransform.M32, normalTransform.M33, normalTransform.M34,
-            normalTransform.M41, normalTransform.M42, normalTransform.M43, normalTransform.M44
+            static_cast<float>(RealEvaluation(normalTransform.M11)), static_cast<float>(RealEvaluation(normalTransform.M12)), static_cast<float>(RealEvaluation(normalTransform.M13)), static_cast<float>(RealEvaluation(normalTransform.M14)),
+            static_cast<float>(RealEvaluation(normalTransform.M21)), static_cast<float>(RealEvaluation(normalTransform.M22)), static_cast<float>(RealEvaluation(normalTransform.M23)), static_cast<float>(RealEvaluation(normalTransform.M24)),
+            static_cast<float>(RealEvaluation(normalTransform.M31)), static_cast<float>(RealEvaluation(normalTransform.M32)), static_cast<float>(RealEvaluation(normalTransform.M33)), static_cast<float>(RealEvaluation(normalTransform.M34)),
+            static_cast<float>(RealEvaluation(normalTransform.M41)), static_cast<float>(RealEvaluation(normalTransform.M42)), static_cast<float>(RealEvaluation(normalTransform.M43)), static_cast<float>(RealEvaluation(normalTransform.M44))
         };
         const float baseColorValues[4] = {
             static_cast<float>(colorAbgr & 0xFFu) / 255.0f,
@@ -450,9 +464,9 @@ namespace helengine::psvita::rendering {
             static_cast<float>((colorAbgr >> 16u) & 0xFFu) / 255.0f,
             static_cast<float>((colorAbgr >> 24u) & 0xFFu) / 255.0f
         };
-        const float lightDirectionValues[4] = { lightDirection.X, lightDirection.Y, lightDirection.Z, 0.0f };
-        const float lightColorValues[4] = { lightColor.X, lightColor.Y, lightColor.Z, 1.0f };
-        const float ambientValues[4] = { ambientColor.X, ambientColor.Y, ambientColor.Z, 1.0f };
+        const float lightDirectionValues[4] = { static_cast<float>(RealEvaluation(lightDirection.X)), static_cast<float>(RealEvaluation(lightDirection.Y)), static_cast<float>(RealEvaluation(lightDirection.Z)), 0.0f };
+        const float lightColorValues[4] = { static_cast<float>(RealEvaluation(lightColor.X)), static_cast<float>(RealEvaluation(lightColor.Y)), static_cast<float>(RealEvaluation(lightColor.Z)), 1.0f };
+        const float ambientValues[4] = { static_cast<float>(RealEvaluation(ambientColor.X)), static_cast<float>(RealEvaluation(ambientColor.Y)), static_cast<float>(RealEvaluation(ambientColor.Z)), 1.0f };
 
         sceGxmSetVertexProgram(context, ForwardLambertProgram.GetVertexProgram());
         sceGxmSetFragmentProgram(context, ForwardLambertProgram.GetFragmentProgram());
@@ -576,16 +590,18 @@ namespace helengine::psvita::rendering {
             throw std::runtime_error("PS Vita Forward Standard submission failed to allocate transient GPU-visible mesh memory.");
         }
         for (int32_t vertexIndex = 0; vertexIndex < vertexCount; ++vertexIndex) {
-            gpuVertices[vertexIndex].Position = positions[vertexIndex];
-            gpuVertices[vertexIndex].Normal = normals[vertexIndex];
-            gpuVertices[vertexIndex].TexCoord = texCoords[vertexIndex];
+            RealEvaluation texCoordX = RealEvaluation(texCoords[vertexIndex].X);
+            RealEvaluation texCoordY = RealEvaluation(texCoords[vertexIndex].Y);
             if (diffuseTexture != nullptr && diffuseTexture->HasNativePayload()
                 && diffuseTexture->GetNativeLayout().Type == 0u) {
-                gpuVertices[vertexIndex].TexCoord.X *= static_cast<float>(diffuseTexture->GetTextureWidthPixels())
-                    / static_cast<float>(textureWidth);
-                gpuVertices[vertexIndex].TexCoord.Y *= static_cast<float>(diffuseTexture->GetTextureHeightPixels())
-                    / static_cast<float>(textureHeight);
+                texCoordX *= RealEvaluation(diffuseTexture->GetTextureWidthPixels()) / RealEvaluation(textureWidth);
+                texCoordY *= RealEvaluation(diffuseTexture->GetTextureHeightPixels()) / RealEvaluation(textureHeight);
             }
+            gpuVertices[vertexIndex] = {
+                { static_cast<float>(RealEvaluation(positions[vertexIndex].X)), static_cast<float>(RealEvaluation(positions[vertexIndex].Y)), static_cast<float>(RealEvaluation(positions[vertexIndex].Z)) },
+                { static_cast<float>(RealEvaluation(normals[vertexIndex].X)), static_cast<float>(RealEvaluation(normals[vertexIndex].Y)), static_cast<float>(RealEvaluation(normals[vertexIndex].Z)) },
+                { static_cast<float>(texCoordX), static_cast<float>(texCoordY) }
+            };
         }
         std::memcpy(gpuIndices, indices, sizeof(std::uint32_t) * static_cast<std::size_t>(indexCount));
 
@@ -594,22 +610,22 @@ namespace helengine::psvita::rendering {
             throw std::runtime_error("PS Vita Forward Standard Shader program did not provide one active GXM context.");
         }
         const float worldViewProjectionValues[16] = {
-            worldViewProjection.M11, worldViewProjection.M12, worldViewProjection.M13, worldViewProjection.M14,
-            worldViewProjection.M21, worldViewProjection.M22, worldViewProjection.M23, worldViewProjection.M24,
-            worldViewProjection.M31, worldViewProjection.M32, worldViewProjection.M33, worldViewProjection.M34,
-            worldViewProjection.M41, worldViewProjection.M42, worldViewProjection.M43, worldViewProjection.M44
+            static_cast<float>(RealEvaluation(worldViewProjection.M11)), static_cast<float>(RealEvaluation(worldViewProjection.M12)), static_cast<float>(RealEvaluation(worldViewProjection.M13)), static_cast<float>(RealEvaluation(worldViewProjection.M14)),
+            static_cast<float>(RealEvaluation(worldViewProjection.M21)), static_cast<float>(RealEvaluation(worldViewProjection.M22)), static_cast<float>(RealEvaluation(worldViewProjection.M23)), static_cast<float>(RealEvaluation(worldViewProjection.M24)),
+            static_cast<float>(RealEvaluation(worldViewProjection.M31)), static_cast<float>(RealEvaluation(worldViewProjection.M32)), static_cast<float>(RealEvaluation(worldViewProjection.M33)), static_cast<float>(RealEvaluation(worldViewProjection.M34)),
+            static_cast<float>(RealEvaluation(worldViewProjection.M41)), static_cast<float>(RealEvaluation(worldViewProjection.M42)), static_cast<float>(RealEvaluation(worldViewProjection.M43)), static_cast<float>(RealEvaluation(worldViewProjection.M44))
         };
         const float normalTransformValues[16] = {
-            normalTransform.M11, normalTransform.M12, normalTransform.M13, normalTransform.M14,
-            normalTransform.M21, normalTransform.M22, normalTransform.M23, normalTransform.M24,
-            normalTransform.M31, normalTransform.M32, normalTransform.M33, normalTransform.M34,
-            normalTransform.M41, normalTransform.M42, normalTransform.M43, normalTransform.M44
+            static_cast<float>(RealEvaluation(normalTransform.M11)), static_cast<float>(RealEvaluation(normalTransform.M12)), static_cast<float>(RealEvaluation(normalTransform.M13)), static_cast<float>(RealEvaluation(normalTransform.M14)),
+            static_cast<float>(RealEvaluation(normalTransform.M21)), static_cast<float>(RealEvaluation(normalTransform.M22)), static_cast<float>(RealEvaluation(normalTransform.M23)), static_cast<float>(RealEvaluation(normalTransform.M24)),
+            static_cast<float>(RealEvaluation(normalTransform.M31)), static_cast<float>(RealEvaluation(normalTransform.M32)), static_cast<float>(RealEvaluation(normalTransform.M33)), static_cast<float>(RealEvaluation(normalTransform.M34)),
+            static_cast<float>(RealEvaluation(normalTransform.M41)), static_cast<float>(RealEvaluation(normalTransform.M42)), static_cast<float>(RealEvaluation(normalTransform.M43)), static_cast<float>(RealEvaluation(normalTransform.M44))
         };
         const float lightViewProjectionValues[16] = {
-            lightViewProjection.M11, lightViewProjection.M12, lightViewProjection.M13, lightViewProjection.M14,
-            lightViewProjection.M21, lightViewProjection.M22, lightViewProjection.M23, lightViewProjection.M24,
-            lightViewProjection.M31, lightViewProjection.M32, lightViewProjection.M33, lightViewProjection.M34,
-            lightViewProjection.M41, lightViewProjection.M42, lightViewProjection.M43, lightViewProjection.M44
+            static_cast<float>(RealEvaluation(lightViewProjection.M11)), static_cast<float>(RealEvaluation(lightViewProjection.M12)), static_cast<float>(RealEvaluation(lightViewProjection.M13)), static_cast<float>(RealEvaluation(lightViewProjection.M14)),
+            static_cast<float>(RealEvaluation(lightViewProjection.M21)), static_cast<float>(RealEvaluation(lightViewProjection.M22)), static_cast<float>(RealEvaluation(lightViewProjection.M23)), static_cast<float>(RealEvaluation(lightViewProjection.M24)),
+            static_cast<float>(RealEvaluation(lightViewProjection.M31)), static_cast<float>(RealEvaluation(lightViewProjection.M32)), static_cast<float>(RealEvaluation(lightViewProjection.M33)), static_cast<float>(RealEvaluation(lightViewProjection.M34)),
+            static_cast<float>(RealEvaluation(lightViewProjection.M41)), static_cast<float>(RealEvaluation(lightViewProjection.M42)), static_cast<float>(RealEvaluation(lightViewProjection.M43)), static_cast<float>(RealEvaluation(lightViewProjection.M44))
         };
         const float baseColorValues[4] = {
             static_cast<float>(colorAbgr & 0xFFu) / 255.0f,
@@ -617,9 +633,9 @@ namespace helengine::psvita::rendering {
             static_cast<float>((colorAbgr >> 16u) & 0xFFu) / 255.0f,
             static_cast<float>((colorAbgr >> 24u) & 0xFFu) / 255.0f
         };
-        const float lightDirectionValues[4] = { lightDirection.X, lightDirection.Y, lightDirection.Z, 0.0f };
-        const float lightColorValues[4] = { lightColor.X, lightColor.Y, lightColor.Z, 1.0f };
-        const float ambientValues[4] = { ambientColor.X, ambientColor.Y, ambientColor.Z, 1.0f };
+        const float lightDirectionValues[4] = { static_cast<float>(RealEvaluation(lightDirection.X)), static_cast<float>(RealEvaluation(lightDirection.Y)), static_cast<float>(RealEvaluation(lightDirection.Z)), 0.0f };
+        const float lightColorValues[4] = { static_cast<float>(RealEvaluation(lightColor.X)), static_cast<float>(RealEvaluation(lightColor.Y)), static_cast<float>(RealEvaluation(lightColor.Z)), 1.0f };
+        const float ambientValues[4] = { static_cast<float>(RealEvaluation(ambientColor.X)), static_cast<float>(RealEvaluation(ambientColor.Y)), static_cast<float>(RealEvaluation(ambientColor.Z)), 1.0f };
         const float shadowBiasValues[4] = { 0.003f, 0.0f, 0.0f, 0.0f };
 
         sceGxmSetVertexProgram(context, ForwardStandardProgram.GetVertexProgram());
@@ -824,7 +840,7 @@ namespace helengine::psvita::rendering {
         AppendRendererTrace("GxmRenderer: EnsureUploaded runtimeTexture="
             + std::to_string(reinterpret_cast<std::uintptr_t>(runtimeTexture))
             + " id="
-            + runtimeTexture->get_Id()
+            + runtimeTexture->get_Id().raw()
             + " nativeTexture="
             + std::to_string(reinterpret_cast<std::uintptr_t>(nativeTexture))
             + " logicalWidth="
@@ -956,10 +972,10 @@ namespace helengine::psvita::rendering {
         }
 
         const float matrixValues[16] = {
-            worldViewProjection.M11, worldViewProjection.M12, worldViewProjection.M13, worldViewProjection.M14,
-            worldViewProjection.M21, worldViewProjection.M22, worldViewProjection.M23, worldViewProjection.M24,
-            worldViewProjection.M31, worldViewProjection.M32, worldViewProjection.M33, worldViewProjection.M34,
-            worldViewProjection.M41, worldViewProjection.M42, worldViewProjection.M43, worldViewProjection.M44
+            static_cast<float>(RealEvaluation(worldViewProjection.M11)), static_cast<float>(RealEvaluation(worldViewProjection.M12)), static_cast<float>(RealEvaluation(worldViewProjection.M13)), static_cast<float>(RealEvaluation(worldViewProjection.M14)),
+            static_cast<float>(RealEvaluation(worldViewProjection.M21)), static_cast<float>(RealEvaluation(worldViewProjection.M22)), static_cast<float>(RealEvaluation(worldViewProjection.M23)), static_cast<float>(RealEvaluation(worldViewProjection.M24)),
+            static_cast<float>(RealEvaluation(worldViewProjection.M31)), static_cast<float>(RealEvaluation(worldViewProjection.M32)), static_cast<float>(RealEvaluation(worldViewProjection.M33)), static_cast<float>(RealEvaluation(worldViewProjection.M34)),
+            static_cast<float>(RealEvaluation(worldViewProjection.M41)), static_cast<float>(RealEvaluation(worldViewProjection.M42)), static_cast<float>(RealEvaluation(worldViewProjection.M43)), static_cast<float>(RealEvaluation(worldViewProjection.M44))
         };
         sceGxmSetUniformDataF(vertexDefaultUniformBuffer, parameter, 0u, 16u, matrixValues);
     }
