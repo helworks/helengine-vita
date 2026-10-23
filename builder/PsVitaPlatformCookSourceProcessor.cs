@@ -1,4 +1,3 @@
-using System.Reflection;
 using helengine.editor;
 
 namespace helengine.psvita.builder;
@@ -13,27 +12,17 @@ public sealed class PsVitaPlatformCookSourceProcessor : IPsVitaPlatformCookSourc
     const string FontAtlasSuffix = "#atlas";
 
     /// <summary>
-    /// Relative Windows editor backend assembly path used when the importer assembly has not been loaded yet.
-    /// </summary>
-    const string EditorWindowsAssemblyRelativePath = @"engine\helengine.editor.windows\bin\Debug\net9.0-windows\helengine.editor.windows.dll";
-
-    /// <summary>
-    /// Relative editor host assembly path used when the importer-host assembly has not been loaded yet.
-    /// </summary>
-    const string EditorAppAssemblyRelativePath = @"helengine.ui\helengine.editor.app\bin\Debug\net9.0-windows\helengine.editor.app.dll";
-
-    /// <summary>
     /// Builder-owned cooker that preserves imported storage while applying generic or native Vita settings.
     /// </summary>
     readonly PsVitaTextureCooker TextureCooker;
 
     /// <summary>
-    /// Lazily initialized default texture importer registrations loaded from the Windows editor backend.
+    /// Lazily initialized portable texture registrations that retain persisted importer identifiers.
     /// </summary>
     IReadOnlyList<TextureImporterRegistration> TextureImporterRegistrationsValue;
 
     /// <summary>
-    /// Lazily initialized source font importer loaded from the Windows editor backend.
+    /// Lazily initialized source font importer provided by the portable editor factory.
     /// </summary>
     IFontImporter FontImporterValue;
 
@@ -215,7 +204,7 @@ public sealed class PsVitaPlatformCookSourceProcessor : IPsVitaPlatformCookSourc
     }
 
     /// <summary>
-    /// Gets the lazily loaded default texture importer registrations provided by the Windows editor backend.
+    /// Gets the default portable texture importers with their existing authored identifiers.
     /// </summary>
     /// <returns>Default texture importer registrations.</returns>
     IReadOnlyList<TextureImporterRegistration> GetTextureImporterRegistrations() {
@@ -223,15 +212,7 @@ public sealed class PsVitaPlatformCookSourceProcessor : IPsVitaPlatformCookSourc
             return TextureImporterRegistrationsValue;
         }
 
-        Assembly editorWindowsAssembly = LoadEditorWindowsAssembly();
-        Type textureFactoryType = editorWindowsAssembly.GetType("helengine.editor.EditorHostTextureImporterFactory", true)
-            ?? throw new InvalidOperationException("Windows editor backend did not expose EditorHostTextureImporterFactory.");
-        MethodInfo createDefaultMethod = textureFactoryType.GetMethod("CreateDefault", BindingFlags.Public | BindingFlags.Static)
-            ?? throw new InvalidOperationException("Windows editor backend did not expose EditorHostTextureImporterFactory.CreateDefault().");
-        object result = createDefaultMethod.Invoke(null, null)
-            ?? throw new InvalidOperationException("Windows editor backend returned no default texture importers.");
-        IReadOnlyList<IAssetImporterRegistration> registrations = result as IReadOnlyList<IAssetImporterRegistration>
-            ?? throw new InvalidOperationException("Windows editor backend returned an unexpected texture importer collection.");
+        IReadOnlyList<IAssetImporterRegistration> registrations = PortableImporterFactory.CreateDefault();
 
         List<TextureImporterRegistration> textureRegistrations = new List<TextureImporterRegistration>();
         for (int index = 0; index < registrations.Count; index++) {
@@ -241,7 +222,7 @@ public sealed class PsVitaPlatformCookSourceProcessor : IPsVitaPlatformCookSourc
         }
 
         if (textureRegistrations.Count == 0) {
-            throw new InvalidOperationException("Windows editor backend did not expose any texture importer registrations.");
+            throw new InvalidOperationException("Portable editor factory did not expose any texture importer registrations.");
         }
 
         TextureImporterRegistrationsValue = textureRegistrations;
@@ -257,79 +238,16 @@ public sealed class PsVitaPlatformCookSourceProcessor : IPsVitaPlatformCookSourc
             return FontImporterValue;
         }
 
-        Assembly editorAppAssembly = LoadEditorAppAssembly();
-        Type importerFactoryType = editorAppAssembly.GetType("helengine.editor.app.EditorHostImporterFactory", true)
-            ?? throw new InvalidOperationException("Editor host assembly did not expose helengine.editor.app.EditorHostImporterFactory.");
-        MethodInfo createDefaultMethod = importerFactoryType.GetMethod("CreateDefault", BindingFlags.Public | BindingFlags.Static)
-            ?? throw new InvalidOperationException("Editor host assembly did not expose EditorHostImporterFactory.CreateDefault().");
-        object result = createDefaultMethod.Invoke(null, null)
-            ?? throw new InvalidOperationException("Editor host assembly returned no default source importers.");
-        object[] importers = result as object[]
-            ?? throw new InvalidOperationException("Editor host assembly returned an unexpected source importer collection.");
-        for (int index = 0; index < importers.Length; index++) {
-            if (importers[index] is IFontImporter fontImporter) {
-                FontImporterValue = fontImporter;
+        IReadOnlyList<IAssetImporterRegistration> registrations = PortableImporterFactory.CreateDefault();
+        for (int index = 0; index < registrations.Count; index++) {
+            if (registrations[index] is FontImporterRegistration fontRegistration &&
+                string.Equals(fontRegistration.ImporterId, "gdi-font", StringComparison.Ordinal)) {
+                FontImporterValue = fontRegistration.Importer;
                 return FontImporterValue;
             }
         }
 
-        throw new InvalidOperationException("Editor host assembly did not expose any font importers.");
-    }
-
-    /// <summary>
-    /// Loads the Windows editor backend assembly that owns the source texture import implementations.
-    /// </summary>
-    /// <returns>Loaded editor backend assembly.</returns>
-    static Assembly LoadEditorWindowsAssembly() {
-        Assembly[] loadedAssemblies = AppDomain.CurrentDomain.GetAssemblies();
-        for (int index = 0; index < loadedAssemblies.Length; index++) {
-            Assembly assembly = loadedAssemblies[index];
-            if (string.Equals(assembly.GetName().Name, "helengine.editor.windows", StringComparison.OrdinalIgnoreCase)) {
-                return assembly;
-            }
-        }
-
-        try {
-            return Assembly.Load("helengine.editor.windows");
-        } catch {
-        }
-
-        string assemblyPath = Path.Combine(ResolveHelengineRootPath(), NormalizeRelativePath(EditorWindowsAssemblyRelativePath));
-        if (!File.Exists(assemblyPath)) {
-            throw new FileNotFoundException(
-                "Windows editor backend assembly 'helengine.editor.windows' was not found. Build helengine.editor.windows before executing Vita builder-owned cook work items.",
-                assemblyPath);
-        }
-
-        return Assembly.LoadFrom(assemblyPath);
-    }
-
-    /// <summary>
-    /// Loads the editor host assembly that owns the source font import implementations.
-    /// </summary>
-    /// <returns>Loaded editor host assembly.</returns>
-    static Assembly LoadEditorAppAssembly() {
-        Assembly[] loadedAssemblies = AppDomain.CurrentDomain.GetAssemblies();
-        for (int index = 0; index < loadedAssemblies.Length; index++) {
-            Assembly assembly = loadedAssemblies[index];
-            if (string.Equals(assembly.GetName().Name, "helengine.editor.app", StringComparison.OrdinalIgnoreCase)) {
-                return assembly;
-            }
-        }
-
-        try {
-            return Assembly.Load("helengine.editor.app");
-        } catch {
-        }
-
-        string assemblyPath = Path.Combine(ResolveHelengineRootPath(), NormalizeRelativePath(EditorAppAssemblyRelativePath));
-        if (!File.Exists(assemblyPath)) {
-            throw new FileNotFoundException(
-                "Editor host assembly 'helengine.editor.app' was not found. Build helengine.editor.app before executing Vita builder-owned font cook work items.",
-                assemblyPath);
-        }
-
-        return Assembly.LoadFrom(assemblyPath);
+        throw new InvalidOperationException("Portable editor factory did not expose the gdi-font importer registration.");
     }
 
     /// <summary>
@@ -347,68 +265,4 @@ public sealed class PsVitaPlatformCookSourceProcessor : IPsVitaPlatformCookSourc
             : "." + extension.ToLowerInvariant();
     }
 
-    /// <summary>
-    /// Resolves the helengine repository root used to locate editor backend assemblies when they have not been preloaded.
-    /// </summary>
-    /// <returns>Absolute helengine repository root path.</returns>
-    static string ResolveHelengineRootPath() {
-        string configuredHelengineRootPath = Environment.GetEnvironmentVariable("HELENGINE_ROOT") ?? string.Empty;
-        if (IsHelengineRootPath(configuredHelengineRootPath)) {
-            return Path.GetFullPath(configuredHelengineRootPath);
-        }
-
-        string configuredHelengineSourceRootPath = Environment.GetEnvironmentVariable("HELENGINE_SOURCE_ROOT") ?? string.Empty;
-        if (IsHelengineRootPath(configuredHelengineSourceRootPath)) {
-            return Path.GetFullPath(configuredHelengineSourceRootPath);
-        }
-
-        string configuredPsVitaRepositoryRootPath = Environment.GetEnvironmentVariable("HELENGINE_PSVITA_REPOSITORY_ROOT") ?? string.Empty;
-        if (!string.IsNullOrWhiteSpace(configuredPsVitaRepositoryRootPath)) {
-            string siblingHelengineRootPath = Path.GetFullPath(Path.Combine(configuredPsVitaRepositoryRootPath, "..", "helengine"));
-            if (IsHelengineRootPath(siblingHelengineRootPath)) {
-                return siblingHelengineRootPath;
-            }
-        }
-
-        string currentPath = AppContext.BaseDirectory;
-        while (!string.IsNullOrWhiteSpace(currentPath)) {
-            string siblingHelengineRootPath = Path.GetFullPath(Path.Combine(currentPath, "..", "..", "..", "..", "..", "helengine"));
-            if (IsHelengineRootPath(siblingHelengineRootPath)) {
-                return siblingHelengineRootPath;
-            }
-
-            DirectoryInfo parentDirectory = Directory.GetParent(currentPath);
-            if (parentDirectory == null) {
-                break;
-            }
-
-            currentPath = parentDirectory.FullName;
-        }
-
-        throw new InvalidOperationException("The helengine repository root could not be resolved for Vita builder-owned cook work items.");
-    }
-
-    /// <summary>
-    /// Determines whether one path looks like the helengine repository root.
-    /// </summary>
-    /// <param name="path">Candidate helengine repository root path.</param>
-    /// <returns>True when the path contains the helengine editor solution entry points.</returns>
-    static bool IsHelengineRootPath(string path) {
-        if (string.IsNullOrWhiteSpace(path)) {
-            return false;
-        }
-
-        string editorWindowsProjectPath = Path.Combine(path, "engine", "helengine.editor.windows", "helengine.editor.windows.csproj");
-        string editorAppProjectPath = Path.Combine(path, "helengine.ui", "helengine.editor.app", "helengine.editor.app.csproj");
-        return File.Exists(editorWindowsProjectPath) && File.Exists(editorAppProjectPath);
-    }
-
-    /// <summary>
-    /// Normalizes one logical path into the current filesystem separator convention.
-    /// </summary>
-    /// <param name="path">Logical path to normalize.</param>
-    /// <returns>Normalized filesystem path.</returns>
-    static string NormalizeRelativePath(string path) {
-        return path.Replace('\\', Path.DirectorySeparatorChar).Replace('/', Path.DirectorySeparatorChar);
-    }
 }
