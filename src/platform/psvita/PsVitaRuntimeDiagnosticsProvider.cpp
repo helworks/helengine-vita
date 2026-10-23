@@ -16,7 +16,7 @@ namespace helengine::psvita {
     }
 
     /// Records one scene-transition stage emitted by the generated runtime scene manager.
-    void PsVitaRuntimeDiagnosticsProvider::ReportSceneTransitionStage(std::string stage, std::string sceneId, int32_t loadedSceneCount, int32_t pendingOperationCount) {
+    void PsVitaRuntimeDiagnosticsProvider::ReportSceneTransitionStage(HeCppString stage, HeCppString sceneId, int32_t loadedSceneCount, int32_t pendingOperationCount) {
         AppendTraceLine("RuntimeSceneTransition: stage=" + stage
             + " scene=" + sceneId
             + " loaded=" + std::to_string(loadedSceneCount)
@@ -24,7 +24,7 @@ namespace helengine::psvita {
     }
 
     /// Records one entity-disposal stage emitted during runtime scene transitions.
-    void PsVitaRuntimeDiagnosticsProvider::ReportEntityDisposalStage(std::string stage, int32_t entityChildCount, int32_t componentCount, int32_t componentIndex) {
+    void PsVitaRuntimeDiagnosticsProvider::ReportEntityDisposalStage(HeCppString stage, int32_t entityChildCount, int32_t componentCount, int32_t componentIndex) {
         AppendTraceLine("RuntimeEntityDisposal: stage=" + stage
             + " children=" + std::to_string(entityChildCount)
             + " components=" + std::to_string(componentCount)
@@ -32,7 +32,7 @@ namespace helengine::psvita {
     }
 
     /// Appends one runtime diagnostics line to the PS Vita boot trace.
-    void PsVitaRuntimeDiagnosticsProvider::AppendTraceLine(const std::string& message) {
+    void PsVitaRuntimeDiagnosticsProvider::AppendTraceLine(const HeCppString& message) {
         std::FILE* file = std::fopen(BootTracePath, "a");
         if (file == nullptr) {
             return;
