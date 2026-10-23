@@ -27,6 +27,7 @@
 #include "ModelAssetIndexData.hpp"
 #include "ObjectManager.hpp"
 #include "RuntimeMaterial.hpp"
+#include "RealMath.hpp"
 #if HE_CPP_FEATURE_SHADERS
 #include "ShaderMaterialAsset.hpp"
 #include "ShaderMaterialAssetBinarySerializer.hpp"
@@ -84,13 +85,13 @@ namespace {
         helengine::psvita::rendering::PsVitaSolidColorVertex Vertex0;
         helengine::psvita::rendering::PsVitaSolidColorVertex Vertex1;
         helengine::psvita::rendering::PsVitaSolidColorVertex Vertex2;
-        float AverageDepth;
+        RealEvaluation AverageDepth;
     };
 
     /// Returns whether the authored normalized viewport uses stacked dual-screen vertical units.
-    bool UsesStackedDualScreenViewportUnits(const ::float4& viewport, double targetWidth, double targetHeight) {
-        const double expectedStackedHeight = targetWidth * 1.5d;
-        if (std::abs(targetHeight - expectedStackedHeight) > 0.5d) {
+    bool UsesStackedDualScreenViewportUnits(const ::float4& viewport, RealEvaluation targetWidth, RealEvaluation targetHeight) {
+        const RealEvaluation expectedStackedHeight = targetWidth * 1.5f;
+        if (RealMath::Abs(targetHeight - expectedStackedHeight) > 0.5f) {
             return false;
         }
 
@@ -98,7 +99,7 @@ namespace {
     }
 
     /// Resolves one authored viewport into pixel-space coordinates for the active PS Vita target.
-    ::float4 ResolveViewport(const ::float4& viewport, double targetWidth, double targetHeight) {
+    ::float4 ResolveViewport(const ::float4& viewport, RealEvaluation targetWidth, RealEvaluation targetHeight) {
         if (targetWidth <= 0.0) {
             throw new ArgumentOutOfRangeException("targetWidth", "Target width must be greater than zero.");
         }
@@ -106,15 +107,15 @@ namespace {
             throw new ArgumentOutOfRangeException("targetHeight", "Target height must be greater than zero.");
         }
 
-        double offsetX = viewport.X;
-        double offsetY = viewport.Y;
-        double width = viewport.Z;
-        double height = viewport.W;
+        RealEvaluation offsetX = viewport.X;
+        RealEvaluation offsetY = viewport.Y;
+        RealEvaluation width = viewport.Z;
+        RealEvaluation height = viewport.W;
         if (width <= 1.0 && height <= 1.0) {
             offsetX *= targetWidth;
             width *= targetWidth;
             if (UsesStackedDualScreenViewportUnits(viewport, targetWidth, targetHeight)) {
-                const double screenHeight = targetHeight * 0.5d;
+                const RealEvaluation screenHeight = targetHeight * 0.5f;
                 offsetY *= screenHeight;
                 height *= screenHeight;
             } else {
@@ -124,30 +125,30 @@ namespace {
         }
 
         return ::float4(
-            static_cast<float>(offsetX),
-            static_cast<float>(offsetY),
-            static_cast<float>(width),
-            static_cast<float>(height));
+            offsetX,
+            offsetY,
+            width,
+            height);
     }
 
     /// Clamps one near clip plane for the temporary Vita perspective projection path.
-    float ClampNearPlaneDistance(float nearPlaneDistance, float farPlaneDistance) {
-        const float minimumFarPlaneDistance = std::max(PsVitaMinimumNearPlaneDistance + PsVitaMinimumPlaneSeparation, farPlaneDistance);
+    RealEvaluation ClampNearPlaneDistance(RealEvaluation nearPlaneDistance, RealEvaluation farPlaneDistance) {
+        const RealEvaluation minimumFarPlaneDistance = std::max(RealEvaluation(PsVitaMinimumNearPlaneDistance) + PsVitaMinimumPlaneSeparation, farPlaneDistance);
         return std::min(
-            std::max(PsVitaMinimumNearPlaneDistance, nearPlaneDistance),
+            std::max(RealEvaluation(PsVitaMinimumNearPlaneDistance), nearPlaneDistance),
             minimumFarPlaneDistance - PsVitaMinimumPlaneSeparation);
     }
 
     /// Clamps one far clip plane for the temporary Vita perspective projection path.
-    float ClampFarPlaneDistance(float nearPlaneDistance, float farPlaneDistance) {
-        const float minimumNearPlaneDistance = std::max(PsVitaMinimumNearPlaneDistance, nearPlaneDistance);
+    RealEvaluation ClampFarPlaneDistance(RealEvaluation nearPlaneDistance, RealEvaluation farPlaneDistance) {
+        const RealEvaluation minimumNearPlaneDistance = std::max(RealEvaluation(PsVitaMinimumNearPlaneDistance), nearPlaneDistance);
         return std::max(minimumNearPlaneDistance + PsVitaMinimumPlaneSeparation, farPlaneDistance);
     }
 
     /// Builds the temporary Vita perspective projection until generated camera clip planes are surfaced in the native core.
-    ::float4x4 CreatePerspectiveProjection(float fieldOfView, float aspectRatio) {
-        const float nearPlaneDistance = ClampNearPlaneDistance(PsVitaDefaultNearPlaneDistance, PsVitaDefaultFarPlaneDistance);
-        const float farPlaneDistance = ClampFarPlaneDistance(nearPlaneDistance, PsVitaDefaultFarPlaneDistance);
+    ::float4x4 CreatePerspectiveProjection(RealEvaluation fieldOfView, RealEvaluation aspectRatio) {
+        const RealEvaluation nearPlaneDistance = ClampNearPlaneDistance(PsVitaDefaultNearPlaneDistance, PsVitaDefaultFarPlaneDistance);
+        const RealEvaluation farPlaneDistance = ClampFarPlaneDistance(nearPlaneDistance, PsVitaDefaultFarPlaneDistance);
 
         ::float4x4 projection;
         float4x4::CreatePerspectiveFieldOfView__out4(fieldOfView, aspectRatio, nearPlaneDistance, farPlaneDistance, projection);
@@ -233,26 +234,26 @@ namespace helengine::psvita {
     }
 
     /// Builds one concrete runtime material from one packaged cooked platform material asset.
-    ::RuntimeMaterial* PsVitaRenderManager3D::BuildMaterialFromCooked(std::string cookedAssetPath, IContentStreamSource* contentStreamSource) {
-        if (cookedAssetPath.empty()) {
+    ::RuntimeMaterial* PsVitaRenderManager3D::BuildMaterialFromCooked(HeCppString cookedAssetPath, IContentStreamSource* contentStreamSource) {
+        if (String::IsNullOrEmpty(cookedAssetPath)) {
             throw new ArgumentException("Cooked material asset path must be provided.", "cookedAssetPath");
         }
 
-        AppendRenderTrace("RenderManager3D::BuildMaterialFromCooked path=" + cookedAssetPath);
+        AppendRenderTrace("RenderManager3D::BuildMaterialFromCooked path=" + cookedAssetPath.raw());
 
         rendering::PsVitaCompiledShaderMaterial compiledShaderMaterial;
-        if (rendering::PsVitaCompiledShaderMaterialReader::TryRead(cookedAssetPath, compiledShaderMaterial)) {
-            AppendRenderTrace("RenderManager3D::BuildMaterialFromCooked compiled-shader path=" + cookedAssetPath);
+        if (rendering::PsVitaCompiledShaderMaterialReader::TryRead(cookedAssetPath.raw(), compiledShaderMaterial)) {
+            AppendRenderTrace("RenderManager3D::BuildMaterialFromCooked compiled-shader path=" + cookedAssetPath.raw());
             ::RuntimeMaterial* runtimeMaterial = BuildCompiledShaderRuntimeMaterial(compiledShaderMaterial);
             if (compiledShaderMaterial.RequiresDiffuseTexture && !compiledShaderMaterial.DiffuseTextureAssetId.empty()) {
                 if (Core::Instance == nullptr || Core::Instance->RenderManager2D == nullptr || contentStreamSource == nullptr) {
                     throw new InvalidOperationException("Textured PS Vita compiled-shader materials require the runtime texture loader.");
                 }
-                std::size_t cookedRootIndex = cookedAssetPath.find("cooked/");
+                std::size_t cookedRootIndex = cookedAssetPath.raw().find("cooked/");
                 if (cookedRootIndex == std::string::npos) {
                     throw new InvalidOperationException("Textured PS Vita compiled-shader materials require a cooked asset path.");
                 }
-                std::string cookedTexturePath = cookedAssetPath.substr(0, cookedRootIndex) + "cooked/imported/" + compiledShaderMaterial.DiffuseTextureAssetId;
+                std::string cookedTexturePath = cookedAssetPath.raw().substr(0, cookedRootIndex) + "cooked/imported/" + compiledShaderMaterial.DiffuseTextureAssetId;
                 ::RuntimeTexture* runtimeTexture = Core::Instance->RenderManager2D->BuildTextureFromCooked(cookedTexturePath, contentStreamSource);
                 if (runtimeTexture == nullptr) {
                     throw new InvalidOperationException("Textured PS Vita compiled-shader materials require one runtime diffuse texture.");
@@ -318,17 +319,17 @@ namespace helengine::psvita {
 
     /// Loads and attaches the packaged diffuse texture referenced by one shader material.
 #if HE_CPP_FEATURE_SHADERS
-    void PsVitaRenderManager3D::AttachDiffuseTexture(::RuntimeMaterial* runtimeMaterial, ::ShaderMaterialAsset* materialAsset, const std::string& cookedAssetPath, IContentStreamSource* contentStreamSource) {
-        if (runtimeMaterial == nullptr || materialAsset == nullptr || materialAsset->DiffuseTextureAssetId.empty() || Core::Instance == nullptr || Core::Instance->RenderManager2D == nullptr) {
+    void PsVitaRenderManager3D::AttachDiffuseTexture(::RuntimeMaterial* runtimeMaterial, ::ShaderMaterialAsset* materialAsset, const HeCppString& cookedAssetPath, IContentStreamSource* contentStreamSource) {
+        if (runtimeMaterial == nullptr || materialAsset == nullptr || String::IsNullOrEmpty(materialAsset->DiffuseTextureAssetId) || Core::Instance == nullptr || Core::Instance->RenderManager2D == nullptr) {
             return;
         }
 
-        std::size_t cookedRootIndex = cookedAssetPath.find("cooked/");
+        std::size_t cookedRootIndex = cookedAssetPath.raw().find("cooked/");
         if (cookedRootIndex == std::string::npos) {
             return;
         }
 
-        std::string cookedTexturePath = cookedAssetPath.substr(0, cookedRootIndex) + "cooked/imported/" + materialAsset->DiffuseTextureAssetId;
+        std::string cookedTexturePath = cookedAssetPath.raw().substr(0, cookedRootIndex) + "cooked/imported/" + materialAsset->DiffuseTextureAssetId.raw();
         ::RuntimeTexture* runtimeTexture = Core::Instance->RenderManager2D->BuildTextureFromCooked(cookedTexturePath, contentStreamSource);
         runtimeMaterial->SetPrimaryTexture(runtimeTexture);
     }
@@ -362,10 +363,10 @@ namespace helengine::psvita {
         auto* runtimeMaterial = new rendering::PsVitaCompiledShaderRuntimeMaterial();
         runtimeMaterial->set_Id(materialAsset->get_Id());
         runtimeMaterial->SetRenderState(materialAsset->RenderState);
-        runtimeMaterial->SetShaderAssetId(materialAsset->ShaderAssetId);
-        runtimeMaterial->SetVertexProgramName(materialAsset->VertexProgram);
-        runtimeMaterial->SetPixelProgramName(materialAsset->PixelProgram);
-        runtimeMaterial->SetVariantName(materialAsset->Variant);
+        runtimeMaterial->SetShaderAssetId(materialAsset->ShaderAssetId.raw());
+        runtimeMaterial->SetVertexProgramName(materialAsset->VertexProgram.raw());
+        runtimeMaterial->SetPixelProgramName(materialAsset->PixelProgram.raw());
+        runtimeMaterial->SetVariantName(materialAsset->Variant.raw());
         runtimeMaterial->SetBaseColorAbgr(ResolveCookedMaterialBaseColorAbgr(materialAsset));
         return runtimeMaterial;
     }
@@ -389,17 +390,17 @@ namespace helengine::psvita {
     }
 
     /// Builds one concrete PS Vita runtime model from one packaged cooked model asset.
-    ::RuntimeModel* PsVitaRenderManager3D::BuildModelFromCooked(std::string cookedAssetPath, IContentStreamSource* contentStreamSource) {
+    ::RuntimeModel* PsVitaRenderManager3D::BuildModelFromCooked(HeCppString cookedAssetPath, IContentStreamSource* contentStreamSource) {
         (void)contentStreamSource;
-        if (cookedAssetPath.empty()) {
+        if (String::IsNullOrEmpty(cookedAssetPath)) {
             throw new ArgumentException("Cooked model asset path must be provided.", "cookedAssetPath");
         }
 
-        AppendRenderTrace("RenderManager3D::BuildModelFromCooked path=" + cookedAssetPath);
+        AppendRenderTrace("RenderManager3D::BuildModelFromCooked path=" + cookedAssetPath.raw());
 
-        ::RuntimeModel* packedRuntimeModel = rendering::PsVitaPackedModelReader::TryRead(cookedAssetPath);
+        ::RuntimeModel* packedRuntimeModel = rendering::PsVitaPackedModelReader::TryRead(cookedAssetPath.raw());
         if (packedRuntimeModel != nullptr) {
-            AppendRenderTrace("RenderManager3D::BuildModelFromCooked packed path=" + cookedAssetPath);
+            AppendRenderTrace("RenderManager3D::BuildModelFromCooked packed path=" + cookedAssetPath.raw());
             return packedRuntimeModel;
         }
 
@@ -517,8 +518,8 @@ namespace helengine::psvita {
         ActiveCamera = camera;
         ActiveViewport = ResolveViewport(
             camera->get_Viewport(),
-            static_cast<double>(mainWindowSize.X),
-            static_cast<double>(mainWindowSize.Y));
+            RealEvaluation(mainWindowSize.X),
+            RealEvaluation(mainWindowSize.Y));
         if (ActiveViewport.Z <= 0.0f || ActiveViewport.W <= 0.0f) {
             ActiveCamera = nullptr;
             return;
@@ -757,7 +758,7 @@ namespace helengine::psvita {
         ::float3 lightDirection = ResolveDirectionalLightDirection(lightComponent);
         ::float3 lightPosition = lightDirection * -20.0f;
         ::float3 lightTarget = ::float3::get_Zero();
-        ::float3 lightUp = std::abs(lightDirection.Y) > 0.9f
+        ::float3 lightUp = RealMath::Abs(lightDirection.Y) > 0.9f
             ? ::float3(0.0f, 0.0f, 1.0f)
             : ::float3(0.0f, 1.0f, 0.0f);
         ::float4x4 lightView;
@@ -795,9 +796,9 @@ namespace helengine::psvita {
         }
 
         return ::float3(
-            std::min(1.0f, ambientLightColor.X),
-            std::min(1.0f, ambientLightColor.Y),
-            std::min(1.0f, ambientLightColor.Z));
+            std::min(RealEvaluation(1), RealEvaluation(ambientLightColor.X)),
+            std::min(RealEvaluation(1), RealEvaluation(ambientLightColor.Y)),
+            std::min(RealEvaluation(1), RealEvaluation(ambientLightColor.Z)));
     }
 
     /// Resolves the Lambert fallback base color that should be used for one runtime submesh draw.
@@ -821,12 +822,12 @@ namespace helengine::psvita {
         const ::float3& projectedVertex0,
         const ::float3& projectedVertex1,
         const ::float3& projectedVertex2) {
-        const double edge01X = static_cast<double>(projectedVertex1.X) - static_cast<double>(projectedVertex0.X);
-        const double edge01Y = static_cast<double>(projectedVertex1.Y) - static_cast<double>(projectedVertex0.Y);
-        const double edge02X = static_cast<double>(projectedVertex2.X) - static_cast<double>(projectedVertex0.X);
-        const double edge02Y = static_cast<double>(projectedVertex2.Y) - static_cast<double>(projectedVertex0.Y);
-        const double signedAreaTwice = (edge01X * edge02Y) - (edge01Y * edge02X);
-        if (std::abs(signedAreaTwice) <= 0.01) {
+        const RealEvaluation edge01X = RealEvaluation(projectedVertex1.X) - RealEvaluation(projectedVertex0.X);
+        const RealEvaluation edge01Y = RealEvaluation(projectedVertex1.Y) - RealEvaluation(projectedVertex0.Y);
+        const RealEvaluation edge02X = RealEvaluation(projectedVertex2.X) - RealEvaluation(projectedVertex0.X);
+        const RealEvaluation edge02Y = RealEvaluation(projectedVertex2.Y) - RealEvaluation(projectedVertex0.Y);
+        const RealEvaluation signedAreaTwice = (edge01X * edge02Y) - (edge01Y * edge02X);
+        if (RealMath::Abs(signedAreaTwice) <= 0.01) {
             return true;
         }
         if (cullMode == ::MaterialCullMode::None) {
@@ -847,25 +848,25 @@ namespace helengine::psvita {
         const ::float3& directionalLightColor,
         const ::float3& ambientLightColor,
         bool hasDirectionalLight) {
-        const float red = static_cast<float>(baseColorAbgr & 0xFFu) / 255.0f;
-        const float green = static_cast<float>((baseColorAbgr >> 8u) & 0xFFu) / 255.0f;
-        const float blue = static_cast<float>((baseColorAbgr >> 16u) & 0xFFu) / 255.0f;
+        const RealEvaluation red = RealEvaluation(baseColorAbgr & 0xFFu) / 255.0f;
+        const RealEvaluation green = RealEvaluation((baseColorAbgr >> 8u) & 0xFFu) / 255.0f;
+        const RealEvaluation blue = RealEvaluation((baseColorAbgr >> 16u) & 0xFFu) / 255.0f;
         const std::uint32_t alpha = (baseColorAbgr >> 24u) & 0xFFu;
 
-        const float lambert = hasDirectionalLight
-            ? std::max(0.0f, float3::Dot(float3::Normalize(worldNormal), -lightDirection))
+        const RealEvaluation lambert = hasDirectionalLight
+            ? std::max(RealEvaluation(0), float3::Dot(float3::Normalize(worldNormal), -lightDirection))
             : 1.0f;
         const ::float3 directionalContribution = hasDirectionalLight
             ? directionalLightColor * lambert
             : ::float3::get_Zero();
         const ::float3 lighting = ::float3(
-            std::min(1.0f, ambientLightColor.X + directionalContribution.X + (hasDirectionalLight ? 0.0f : 1.0f)),
-            std::min(1.0f, ambientLightColor.Y + directionalContribution.Y + (hasDirectionalLight ? 0.0f : 1.0f)),
-            std::min(1.0f, ambientLightColor.Z + directionalContribution.Z + (hasDirectionalLight ? 0.0f : 1.0f)));
+            std::min(RealEvaluation(1), ambientLightColor.X + directionalContribution.X + (hasDirectionalLight ? 0.0f : 1.0f)),
+            std::min(RealEvaluation(1), ambientLightColor.Y + directionalContribution.Y + (hasDirectionalLight ? 0.0f : 1.0f)),
+            std::min(RealEvaluation(1), ambientLightColor.Z + directionalContribution.Z + (hasDirectionalLight ? 0.0f : 1.0f)));
 
-        const std::uint32_t litRed = static_cast<std::uint32_t>(std::clamp(red * lighting.X, 0.0f, 1.0f) * 255.0f + 0.5f);
-        const std::uint32_t litGreen = static_cast<std::uint32_t>(std::clamp(green * lighting.Y, 0.0f, 1.0f) * 255.0f + 0.5f);
-        const std::uint32_t litBlue = static_cast<std::uint32_t>(std::clamp(blue * lighting.Z, 0.0f, 1.0f) * 255.0f + 0.5f);
+        const std::uint32_t litRed = static_cast<std::uint32_t>(static_cast<std::int32_t>(std::clamp(red * lighting.X, RealEvaluation(0), RealEvaluation(1)) * 255.0f + 0.5f));
+        const std::uint32_t litGreen = static_cast<std::uint32_t>(static_cast<std::int32_t>(std::clamp(green * lighting.Y, RealEvaluation(0), RealEvaluation(1)) * 255.0f + 0.5f));
+        const std::uint32_t litBlue = static_cast<std::uint32_t>(static_cast<std::int32_t>(std::clamp(blue * lighting.Z, RealEvaluation(0), RealEvaluation(1)) * 255.0f + 0.5f));
         return litRed
             | (litGreen << 8u)
             | (litBlue << 16u)
@@ -955,7 +956,7 @@ namespace helengine::psvita {
         }
 
         auto* runtimeSubmeshes = new Array<rendering::PsVitaRuntimeSubmesh*>(1);
-        (*runtimeSubmeshes)[0] = new rendering::PsVitaRuntimeSubmesh(String::get_Empty(), 0, elementCount, std::move(defaultTriangleIndices));
+        (*runtimeSubmeshes)[0] = new rendering::PsVitaRuntimeSubmesh(String::get_Empty().raw(), 0, elementCount, std::move(defaultTriangleIndices));
         return runtimeSubmeshes;
     }
 
@@ -990,34 +991,34 @@ namespace helengine::psvita {
                     buffer,
                     sizeof(buffer),
                     "Render3DCamera: position=(%.4f,%.4f,%.4f) forward=(%.4f,%.4f,%.4f) up=(%.4f,%.4f,%.4f) target=(%.4f,%.4f,%.4f) viewProjRow1=(%.4f,%.4f,%.4f,%.4f) viewProjRow2=(%.4f,%.4f,%.4f,%.4f) viewProjRow3=(%.4f,%.4f,%.4f,%.4f) viewProjRow4=(%.4f,%.4f,%.4f,%.4f)",
-                    cameraPosition.X,
-                    cameraPosition.Y,
-                    cameraPosition.Z,
-                    cameraForward.X,
-                    cameraForward.Y,
-                    cameraForward.Z,
-                    cameraUp.X,
-                    cameraUp.Y,
-                    cameraUp.Z,
-                    cameraTarget.X,
-                    cameraTarget.Y,
-                    cameraTarget.Z,
-                    viewProjection.M11,
-                    viewProjection.M12,
-                    viewProjection.M13,
-                    viewProjection.M14,
-                    viewProjection.M21,
-                    viewProjection.M22,
-                    viewProjection.M23,
-                    viewProjection.M24,
-                    viewProjection.M31,
-                    viewProjection.M32,
-                    viewProjection.M33,
-                    viewProjection.M34,
-                    viewProjection.M41,
-                    viewProjection.M42,
-                    viewProjection.M43,
-                    viewProjection.M44);
+                    static_cast<double>(cameraPosition.X),
+                    static_cast<double>(cameraPosition.Y),
+                    static_cast<double>(cameraPosition.Z),
+                    static_cast<double>(cameraForward.X),
+                    static_cast<double>(cameraForward.Y),
+                    static_cast<double>(cameraForward.Z),
+                    static_cast<double>(cameraUp.X),
+                    static_cast<double>(cameraUp.Y),
+                    static_cast<double>(cameraUp.Z),
+                    static_cast<double>(cameraTarget.X),
+                    static_cast<double>(cameraTarget.Y),
+                    static_cast<double>(cameraTarget.Z),
+                    static_cast<double>(viewProjection.M11),
+                    static_cast<double>(viewProjection.M12),
+                    static_cast<double>(viewProjection.M13),
+                    static_cast<double>(viewProjection.M14),
+                    static_cast<double>(viewProjection.M21),
+                    static_cast<double>(viewProjection.M22),
+                    static_cast<double>(viewProjection.M23),
+                    static_cast<double>(viewProjection.M24),
+                    static_cast<double>(viewProjection.M31),
+                    static_cast<double>(viewProjection.M32),
+                    static_cast<double>(viewProjection.M33),
+                    static_cast<double>(viewProjection.M34),
+                    static_cast<double>(viewProjection.M41),
+                    static_cast<double>(viewProjection.M42),
+                    static_cast<double>(viewProjection.M43),
+                    static_cast<double>(viewProjection.M44));
                 std::fputs(buffer, file);
                 std::fputc('\n', file);
                 std::fclose(file);
@@ -1041,19 +1042,19 @@ namespace helengine::psvita {
         const ::float4x4& worldViewProjection,
         const ::float4& viewport,
         ::float3& projectedPoint) {
-        const float clipX = (point.X * worldViewProjection.M11)
+        const RealEvaluation clipX = (point.X * worldViewProjection.M11)
             + (point.Y * worldViewProjection.M21)
             + (point.Z * worldViewProjection.M31)
             + worldViewProjection.M41;
-        const float clipY = (point.X * worldViewProjection.M12)
+        const RealEvaluation clipY = (point.X * worldViewProjection.M12)
             + (point.Y * worldViewProjection.M22)
             + (point.Z * worldViewProjection.M32)
             + worldViewProjection.M42;
-        const float clipZ = (point.X * worldViewProjection.M13)
+        const RealEvaluation clipZ = (point.X * worldViewProjection.M13)
             + (point.Y * worldViewProjection.M23)
             + (point.Z * worldViewProjection.M33)
             + worldViewProjection.M43;
-        const float clipW = (point.X * worldViewProjection.M14)
+        const RealEvaluation clipW = (point.X * worldViewProjection.M14)
             + (point.Y * worldViewProjection.M24)
             + (point.Z * worldViewProjection.M34)
             + worldViewProjection.M44;
@@ -1071,13 +1072,13 @@ namespace helengine::psvita {
                         buffer,
                         sizeof(buffer),
                         "Render3DProjectionSample: reject=clipW point=(%.4f,%.4f,%.4f) clip=(%.4f,%.4f,%.4f,%.4f)",
-                        point.X,
-                        point.Y,
-                        point.Z,
-                        clipX,
-                        clipY,
-                        clipZ,
-                        clipW);
+                        static_cast<double>(point.X),
+                        static_cast<double>(point.Y),
+                        static_cast<double>(point.Z),
+                        static_cast<double>(clipX),
+                        static_cast<double>(clipY),
+                        static_cast<double>(clipZ),
+                        static_cast<double>(clipW));
                     std::fputs(buffer, file);
                     std::fputc('\n', file);
                     std::fclose(file);
@@ -1086,11 +1087,11 @@ namespace helengine::psvita {
             return false;
         }
 
-        const float inverseW = 1.0f / clipW;
-        const float normalizedX = clipX * inverseW;
-        const float normalizedY = clipY * inverseW;
-        const float normalizedZ = clipZ * inverseW;
-        if (!std::isfinite(normalizedX) || !std::isfinite(normalizedY) || !std::isfinite(normalizedZ)) {
+        const RealEvaluation inverseW = 1.0f / clipW;
+        const RealEvaluation normalizedX = clipX * inverseW;
+        const RealEvaluation normalizedY = clipY * inverseW;
+        const RealEvaluation normalizedZ = clipZ * inverseW;
+        if (!RealEvaluation::IsFinite(normalizedX) || !RealEvaluation::IsFinite(normalizedY) || !RealEvaluation::IsFinite(normalizedZ)) {
             if (shouldLogProjectionSample) {
                 std::FILE* file = std::fopen(PsVitaBootTracePath, "a");
                 if (file != nullptr) {
@@ -1099,16 +1100,16 @@ namespace helengine::psvita {
                         buffer,
                         sizeof(buffer),
                         "Render3DProjectionSample: reject=nonfinite point=(%.4f,%.4f,%.4f) clip=(%.4f,%.4f,%.4f,%.4f) ndc=(%.4f,%.4f,%.4f)",
-                        point.X,
-                        point.Y,
-                        point.Z,
-                        clipX,
-                        clipY,
-                        clipZ,
-                        clipW,
-                        normalizedX,
-                        normalizedY,
-                        normalizedZ);
+                        static_cast<double>(point.X),
+                        static_cast<double>(point.Y),
+                        static_cast<double>(point.Z),
+                        static_cast<double>(clipX),
+                        static_cast<double>(clipY),
+                        static_cast<double>(clipZ),
+                        static_cast<double>(clipW),
+                        static_cast<double>(normalizedX),
+                        static_cast<double>(normalizedY),
+                        static_cast<double>(normalizedZ));
                     std::fputs(buffer, file);
                     std::fputc('\n', file);
                     std::fclose(file);
@@ -1119,7 +1120,7 @@ namespace helengine::psvita {
 
         projectedPoint.X = viewport.X + ((normalizedX + 1.0f) * 0.5f * viewport.Z);
         projectedPoint.Y = viewport.Y + ((1.0f - normalizedY) * 0.5f * viewport.W);
-        projectedPoint.Z = std::clamp(normalizedZ, 0.0f, 1.0f);
+        projectedPoint.Z = std::clamp(normalizedZ, RealEvaluation(0), RealEvaluation(1));
         if (shouldLogProjectionSample) {
             std::FILE* file = std::fopen(PsVitaBootTracePath, "a");
             if (file != nullptr) {
@@ -1128,25 +1129,25 @@ namespace helengine::psvita {
                     buffer,
                     sizeof(buffer),
                     "Render3DProjectionSample: accept point=(%.4f,%.4f,%.4f) clip=(%.4f,%.4f,%.4f,%.4f) ndc=(%.4f,%.4f,%.4f) screen=(%.2f,%.2f,%.4f)",
-                    point.X,
-                    point.Y,
-                    point.Z,
-                    clipX,
-                    clipY,
-                    clipZ,
-                    clipW,
-                    normalizedX,
-                    normalizedY,
-                    normalizedZ,
-                    projectedPoint.X,
-                    projectedPoint.Y,
-                    projectedPoint.Z);
+                    static_cast<double>(point.X),
+                    static_cast<double>(point.Y),
+                    static_cast<double>(point.Z),
+                    static_cast<double>(clipX),
+                    static_cast<double>(clipY),
+                    static_cast<double>(clipZ),
+                    static_cast<double>(clipW),
+                    static_cast<double>(normalizedX),
+                    static_cast<double>(normalizedY),
+                    static_cast<double>(normalizedZ),
+                    static_cast<double>(projectedPoint.X),
+                    static_cast<double>(projectedPoint.Y),
+                    static_cast<double>(projectedPoint.Z));
                 std::fputs(buffer, file);
                 std::fputc('\n', file);
                 std::fclose(file);
             }
         }
-        return std::isfinite(projectedPoint.X) && std::isfinite(projectedPoint.Y);
+        return RealEvaluation::IsFinite(projectedPoint.X) && RealEvaluation::IsFinite(projectedPoint.Y);
     }
 }
 

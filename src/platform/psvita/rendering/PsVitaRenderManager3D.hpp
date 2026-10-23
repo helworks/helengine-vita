@@ -22,6 +22,7 @@ class Array;
 #include "IRenderVisitor3D.hpp"
 #include "MaterialCullMode.hpp"
 #include "RenderManager3D.hpp"
+#include "RealEvaluation.hpp"
 #include "float3.hpp"
 #include "float4.hpp"
 #include "float4x4.hpp"
@@ -43,7 +44,7 @@ namespace helengine::psvita {
         rendering::PsVitaQueuedQuad Quad;
 
         /// Stores the average projected depth used to draw farther triangles first.
-        float AverageDepth;
+        RealEvaluation AverageDepth;
     };
 
     /// Provides the first PS Vita native 3D mesh bridge so runtime models can render through the emulator-safe Lambert fallback path.
@@ -62,7 +63,7 @@ namespace helengine::psvita {
         void Draw() override;
 
         /// Builds one concrete runtime material from one packaged cooked platform material asset.
-        ::RuntimeMaterial* BuildMaterialFromCooked(std::string cookedAssetPath, IContentStreamSource* contentStreamSource) override;
+        ::RuntimeMaterial* BuildMaterialFromCooked(HeCppString cookedAssetPath, IContentStreamSource* contentStreamSource) override;
 
         /// Builds one concrete runtime material from one deserialized material asset payload.
         ::RuntimeMaterial* BuildMaterialFromCooked(::MaterialAsset* materialAsset);
@@ -73,7 +74,7 @@ namespace helengine::psvita {
 #endif
 
         /// Builds one concrete PS Vita runtime model from one packaged cooked model asset.
-        ::RuntimeModel* BuildModelFromCooked(std::string cookedAssetPath, IContentStreamSource* contentStreamSource) override;
+        ::RuntimeModel* BuildModelFromCooked(HeCppString cookedAssetPath, IContentStreamSource* contentStreamSource) override;
 
         /// Builds one concrete PS Vita runtime model from raw data.
         ::RuntimeModel* BuildModelFromRaw(::ModelAsset* data) override;
@@ -141,7 +142,7 @@ namespace helengine::psvita {
 
         /// Loads and attaches the packaged diffuse texture referenced by one shader material.
 #if HE_CPP_FEATURE_SHADERS
-        static void AttachDiffuseTexture(::RuntimeMaterial* runtimeMaterial, ::ShaderMaterialAsset* materialAsset, const std::string& cookedAssetPath, IContentStreamSource* contentStreamSource);
+        static void AttachDiffuseTexture(::RuntimeMaterial* runtimeMaterial, ::ShaderMaterialAsset* materialAsset, const HeCppString& cookedAssetPath, IContentStreamSource* contentStreamSource);
 #endif
 
         /// Resolves the runtime material that should drive one runtime submesh draw.
