@@ -1,4 +1,5 @@
 using helengine.editor;
+using Xunit;
 
 namespace helengine.psvita.builder.tests;
 
