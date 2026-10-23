@@ -25,7 +25,7 @@ public sealed class PsVitaShaderBundleCompilerTests {
                 new PlatformShaderDependency("game/surface", "VS", "PS", "Opaque"),
                 new PlatformShaderDependency("game/surface", "VS", "PS", "Cutout")
             ],
-            [new PlatformShaderArtifactCookSource("game/surface", Convert.ToHexString(SHA256.HashData("shader-source"u8)), "float4 VS() : POSITION { return 0; }\nfloat4 PS() : COLOR { return 1; }")]);
+            [new PlatformShaderArtifactCookSource("game/surface", Convert.ToHexString(SHA256.HashData("shader-source"u8)), "float4 VS() : POSITION { return 0; }\nfloat4 PS() : COLOR { return 1; }")], helengine.NumericPrecisionPolicy.Default);
 
         PlatformShaderArtifactCookResult result = new PsVitaShaderBundleCompiler(exchange).Cook(request);
 
@@ -60,7 +60,7 @@ public sealed class PsVitaShaderBundleCompilerTests {
             "debug",
             "gxm",
             [new PlatformShaderDependency("ForwardLambertShader", "ForwardLambertShader.vs", "ForwardLambertShader.ps", "ForwardLambertOpaque")],
-            [new PlatformShaderArtifactCookSource("ForwardLambertShader", Convert.ToHexString(SHA256.HashData("legacy-lambert"u8)), "cbuffer TransformBuffer { float4x4 worldViewProj; }")]);
+            [new PlatformShaderArtifactCookSource("ForwardLambertShader", Convert.ToHexString(SHA256.HashData("legacy-lambert"u8)), "cbuffer TransformBuffer { float4x4 worldViewProj; }")], helengine.NumericPrecisionPolicy.Default);
 
         new PsVitaShaderBundleCompiler(exchange).Cook(request);
 
@@ -82,7 +82,7 @@ public sealed class PsVitaShaderBundleCompilerTests {
             "release",
             "gxm",
             [new PlatformShaderDependency("ForwardStandardShader", "ForwardStandardShader.vs", "ForwardStandardShader.ps", "ForwardStandardTextured")],
-            [new PlatformShaderArtifactCookSource("ForwardStandardShader", Convert.ToHexString(SHA256.HashData("standard-source"u8)), "shared Standard Shader source")]);
+            [new PlatformShaderArtifactCookSource("ForwardStandardShader", Convert.ToHexString(SHA256.HashData("standard-source"u8)), "shared Standard Shader source")], helengine.NumericPrecisionPolicy.Default);
 
         new PsVitaShaderBundleCompiler(exchange).Cook(request);
 
@@ -110,7 +110,7 @@ public sealed class PsVitaShaderBundleCompilerTests {
             "release",
             "gxm",
             [new PlatformShaderDependency("ForwardStandardShader", "ForwardStandardShader.vs", "ForwardStandardShader.ps", "ForwardStandardTextured")],
-            [new PlatformShaderArtifactCookSource("ForwardStandardShader", Convert.ToHexString(SHA256.HashData("standard-source"u8)), "shared Standard Shader source")]);
+            [new PlatformShaderArtifactCookSource("ForwardStandardShader", Convert.ToHexString(SHA256.HashData("standard-source"u8)), "shared Standard Shader source")], helengine.NumericPrecisionPolicy.Default);
 
         new PsVitaShaderBundleCompiler(exchange).Cook(request);
 
