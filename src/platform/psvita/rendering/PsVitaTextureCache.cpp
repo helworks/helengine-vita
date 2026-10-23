@@ -11,6 +11,7 @@
 #include "TextureAsset.hpp"
 #include "TextureAssetColorFormat.hpp"
 #include "TextureAssetPixelCodec.hpp"
+#include "runtime/native_string.hpp"
 #include "platform/psvita/rendering/PsVitaGpuTexture.hpp"
 #include "platform/psvita/rendering/PsVitaRuntimeTexture.hpp"
 
@@ -24,7 +25,7 @@ namespace helengine::psvita::rendering {
         constexpr const char* BootTracePath = "ux0:/data/helengine_psvita_boot.log";
         constexpr bool EnablePsVitaBootTraceLogging = false;
         /// Appends one local PS Vita texture-cache diagnostics line to the persisted boot trace.
-        void AppendTextureTrace(const std::string& message) {
+        void AppendTextureTrace(const HeCppString& message) {
             if (!EnablePsVitaBootTraceLogging) {
                 return;
             }
