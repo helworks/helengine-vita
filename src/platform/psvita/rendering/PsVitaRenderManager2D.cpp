@@ -60,7 +60,7 @@ namespace helengine::psvita {
     }
 
     /// Builds a runtime texture from one packaged cooked texture asset.
-    ::RuntimeTexture* PsVitaRenderManager2D::BuildTextureFromCooked(std::string cookedAssetPath, IContentStreamSource* contentStreamSource) {
+    ::RuntimeTexture* PsVitaRenderManager2D::BuildTextureFromCooked(HeCppString cookedAssetPath, IContentStreamSource* contentStreamSource) {
         (void)contentStreamSource;
         AppendRenderTrace("RenderManager2D::BuildTextureFromCooked begin");
         if (cookedAssetPath.empty()) {
@@ -266,12 +266,12 @@ namespace helengine::psvita {
 
         float3 position = shape->get_Parent()->get_Position();
         std::uint32_t renderOrder = NextDrawRequestOrdinal();
-        int32_t borderThickness = std::max<int32_t>(0, static_cast<int32_t>(std::lround(shape->get_BorderThickness())));
-        double clampedRadius = std::max(
-            0.0,
-            std::min(
-                static_cast<double>(shape->get_Radius()),
-                std::min(static_cast<double>(size.X), static_cast<double>(size.Y)) * 0.5));
+        int32_t borderThickness = std::max<int32_t>(0, static_cast<int32_t>(RealMath::Round(shape->get_BorderThickness(), MidpointRounding::AwayFromZero)));
+        RealEvaluation clampedRadius = RealMath::Max(
+            RealEvaluation(0),
+            RealMath::Min(
+                shape->get_Radius(),
+                RealEvaluation(RealMath::Min(size.X, size.Y)) / 2));
 
         if (borderThickness > 0) {
             AppendFilledRoundedRect(
@@ -297,10 +297,10 @@ namespace helengine::psvita {
         }
 
         float3 innerPosition(
-            position.X + static_cast<float>(borderThickness),
-            position.Y + static_cast<float>(borderThickness),
+            position.X + borderThickness,
+            position.Y + borderThickness,
             position.Z);
-        double innerRadius = std::max(0.0, clampedRadius - static_cast<double>(borderThickness));
+        RealEvaluation innerRadius = RealMath::Max(RealEvaluation(0), clampedRadius - borderThickness);
         AppendFilledRoundedRect(
             innerPosition,
             innerSize,
@@ -335,28 +335,28 @@ namespace helengine::psvita {
         queuedQuad.RenderOrder = ComposeRenderOrder(ActiveCameraRenderOrder, NextDrawRequestOrdinal());
         queuedQuad.UsesLogicalTextureExtents = true;
 
-        queuedQuad.Vertices[0].PositionX = quad.TopLeft.X;
-        queuedQuad.Vertices[0].PositionY = quad.TopLeft.Y;
-        queuedQuad.Vertices[0].TextureU = sourceRect.X;
-        queuedQuad.Vertices[0].TextureV = sourceRect.Y;
+        queuedQuad.Vertices[0].PositionX = static_cast<float>(quad.TopLeft.X);
+        queuedQuad.Vertices[0].PositionY = static_cast<float>(quad.TopLeft.Y);
+        queuedQuad.Vertices[0].TextureU = static_cast<float>(sourceRect.X);
+        queuedQuad.Vertices[0].TextureV = static_cast<float>(sourceRect.Y);
         queuedQuad.Vertices[0].ColorAbgr = packedColor;
 
-        queuedQuad.Vertices[1].PositionX = quad.TopRight.X;
-        queuedQuad.Vertices[1].PositionY = quad.TopRight.Y;
-        queuedQuad.Vertices[1].TextureU = sourceRect.X + sourceRect.Z;
-        queuedQuad.Vertices[1].TextureV = sourceRect.Y;
+        queuedQuad.Vertices[1].PositionX = static_cast<float>(quad.TopRight.X);
+        queuedQuad.Vertices[1].PositionY = static_cast<float>(quad.TopRight.Y);
+        queuedQuad.Vertices[1].TextureU = static_cast<float>(sourceRect.X + sourceRect.Z);
+        queuedQuad.Vertices[1].TextureV = static_cast<float>(sourceRect.Y);
         queuedQuad.Vertices[1].ColorAbgr = packedColor;
 
-        queuedQuad.Vertices[2].PositionX = quad.BottomLeft.X;
-        queuedQuad.Vertices[2].PositionY = quad.BottomLeft.Y;
-        queuedQuad.Vertices[2].TextureU = sourceRect.X;
-        queuedQuad.Vertices[2].TextureV = sourceRect.Y + sourceRect.W;
+        queuedQuad.Vertices[2].PositionX = static_cast<float>(quad.BottomLeft.X);
+        queuedQuad.Vertices[2].PositionY = static_cast<float>(quad.BottomLeft.Y);
+        queuedQuad.Vertices[2].TextureU = static_cast<float>(sourceRect.X);
+        queuedQuad.Vertices[2].TextureV = static_cast<float>(sourceRect.Y + sourceRect.W);
         queuedQuad.Vertices[2].ColorAbgr = packedColor;
 
-        queuedQuad.Vertices[3].PositionX = quad.BottomRight.X;
-        queuedQuad.Vertices[3].PositionY = quad.BottomRight.Y;
-        queuedQuad.Vertices[3].TextureU = sourceRect.X + sourceRect.Z;
-        queuedQuad.Vertices[3].TextureV = sourceRect.Y + sourceRect.W;
+        queuedQuad.Vertices[3].PositionX = static_cast<float>(quad.BottomRight.X);
+        queuedQuad.Vertices[3].PositionY = static_cast<float>(quad.BottomRight.Y);
+        queuedQuad.Vertices[3].TextureU = static_cast<float>(sourceRect.X + sourceRect.Z);
+        queuedQuad.Vertices[3].TextureV = static_cast<float>(sourceRect.Y + sourceRect.W);
         queuedQuad.Vertices[3].ColorAbgr = packedColor;
 
         QueuedQuads.push_back(queuedQuad);
@@ -377,20 +377,20 @@ namespace helengine::psvita {
         }
 
         const std::uint32_t renderOrder = NextDrawRequestOrdinal();
-        std::string content = text->get_Text();
-        const double fontScale = 1.0;
+        HeCppString content = text->get_Text();
+        const RealEvaluation fontScale = 1;
         if (text->get_WrapText()) {
             int32_t maxWidth = 1;
             ::int2 textSizeValue = text->get_Size();
             if (textSizeValue.X > 0) {
-                maxWidth = std::max(static_cast<int32_t>(1), static_cast<int32_t>(std::round(static_cast<double>(textSizeValue.X) / fontScale)));
+                maxWidth = std::max(static_cast<int32_t>(1), static_cast<int32_t>(RealMath::Round(RealEvaluation(textSizeValue.X) / fontScale, MidpointRounding::AwayFromZero)));
             }
 
             content = TextLayoutUtils::WrapText(content, font, maxWidth);
         }
 
-        std::vector<std::string> lines;
-        std::string currentLine;
+        std::vector<HeCppString> lines;
+        HeCppString currentLine = "";
         for (char character : content) {
             if (character == '\r') {
                 continue;
@@ -406,20 +406,20 @@ namespace helengine::psvita {
         }
         lines.push_back(currentLine);
 
-        std::vector<double> lineWidths;
+        std::vector<RealEvaluation> lineWidths;
         lineWidths.reserve(lines.size());
-        for (const std::string& line : lines) {
+        for (const HeCppString& line : lines) {
             lineWidths.push_back(TextLayoutAlignmentUtils::MeasureVisibleLineWidth(
                 line,
                 font,
                 fontScale,
-                static_cast<double>(font->get_AtlasWidth())));
+                font->get_AtlasWidth()));
         }
 
         float3 position = text->get_Parent()->get_Position();
-        double baseX = static_cast<double>(position.X);
-        double baseY = static_cast<double>(position.Y);
-        double lineHeight = std::max(static_cast<double>(font->get_LineHeight()) * fontScale, 1.0);
+        RealEvaluation baseX = position.X;
+        RealEvaluation baseY = position.Y;
+        RealEvaluation lineHeight = RealMath::Max(font->get_LineHeight() * fontScale, RealEvaluation(1));
         ::int2 layoutSizeValue = text->get_Size();
         std::vector<rendering::PsVitaTextEffectPass> effectPasses;
         effectPasses.reserve(6u);
@@ -428,7 +428,7 @@ namespace helengine::psvita {
             effectPasses.push_back(rendering::PsVitaTextEffectPass { shadowOffset, text->get_ShadowColor() });
         }
 
-        float outlineScale = text->get_OutlineScale();
+        Real outlineScale = text->get_OutlineScale();
         if (outlineScale > 0.0f) {
             ::byte4 outlineColor = text->get_OutlineColor();
             effectPasses.push_back(rendering::PsVitaTextEffectPass { ::float2(-outlineScale, 0.0f), outlineColor });
@@ -440,17 +440,17 @@ namespace helengine::psvita {
         effectPasses.push_back(rendering::PsVitaTextEffectPass { ::float2(0.0f, 0.0f), text->get_Color() });
 
         for (std::size_t lineIndex = 0; lineIndex < lines.size(); ++lineIndex) {
-            const std::string& line = lines[lineIndex];
-            double offsetX = 0.0;
-            double lineOffsetX = TextLayoutAlignmentUtils::ResolveHorizontalOffset(
+            const HeCppString& line = lines[lineIndex];
+            RealEvaluation offsetX = 0;
+            RealEvaluation lineOffsetX = TextLayoutAlignmentUtils::ResolveHorizontalOffset(
                 text->get_Alignment(),
                 layoutSizeValue.X,
                 lineWidths[lineIndex]);
 
-            double lineOffsetY = static_cast<double>(lineIndex) * lineHeight;
+            RealEvaluation lineOffsetY = RealEvaluation(lineIndex) * lineHeight;
             for (char character : line) {
                 if (character == ' ') {
-                    offsetX += static_cast<double>(font->get_FontInfo()->get_SpaceWidth()) * fontScale;
+                    offsetX += font->get_FontInfo()->get_SpaceWidth() * fontScale;
                     continue;
                 }
 
@@ -459,10 +459,10 @@ namespace helengine::psvita {
                     continue;
                 }
 
-                double glyphWidth = std::max(1.0, std::round(static_cast<double>(glyph.SourceRect.Z) * static_cast<double>(font->get_AtlasWidth()) * fontScale));
-                double glyphHeight = std::max(1.0, std::round(static_cast<double>(glyph.SourceRect.W) * static_cast<double>(font->get_AtlasHeight()) * fontScale));
-                double glyphX = baseX + lineOffsetX + offsetX;
-                double glyphY = baseY + lineOffsetY + (static_cast<double>(glyph.OffsetY) * fontScale);
+                RealEvaluation glyphWidth = RealMath::Max(RealEvaluation(1), RealMath::Round(glyph.SourceRect.Z * font->get_AtlasWidth() * fontScale, MidpointRounding::AwayFromZero));
+                RealEvaluation glyphHeight = RealMath::Max(RealEvaluation(1), RealMath::Round(glyph.SourceRect.W * font->get_AtlasHeight() * fontScale, MidpointRounding::AwayFromZero));
+                RealEvaluation glyphX = baseX + lineOffsetX + offsetX;
+                RealEvaluation glyphY = baseY + lineOffsetY + (glyph.OffsetY * fontScale);
 
                 for (const rendering::PsVitaTextEffectPass& effectPass : effectPasses) {
                     std::uint32_t packedColor = PackColorAbgr(effectPass.Color);
@@ -471,35 +471,35 @@ namespace helengine::psvita {
                     queuedQuad.RenderOrder = ComposeRenderOrder(ActiveCameraRenderOrder, renderOrder);
                     queuedQuad.UsesLogicalTextureExtents = true;
 
-                    queuedQuad.Vertices[0].PositionX = static_cast<float>(glyphX + static_cast<double>(effectPass.Offset.X));
-                    queuedQuad.Vertices[0].PositionY = static_cast<float>(glyphY + static_cast<double>(effectPass.Offset.Y));
-                    queuedQuad.Vertices[0].TextureU = glyph.SourceRect.X;
-                    queuedQuad.Vertices[0].TextureV = glyph.SourceRect.Y;
+                    queuedQuad.Vertices[0].PositionX = static_cast<float>(glyphX + RealEvaluation(effectPass.Offset.X));
+                    queuedQuad.Vertices[0].PositionY = static_cast<float>(glyphY + RealEvaluation(effectPass.Offset.Y));
+                    queuedQuad.Vertices[0].TextureU = static_cast<float>(glyph.SourceRect.X);
+                    queuedQuad.Vertices[0].TextureV = static_cast<float>(glyph.SourceRect.Y);
                     queuedQuad.Vertices[0].ColorAbgr = packedColor;
 
-                    queuedQuad.Vertices[1].PositionX = static_cast<float>(glyphX + glyphWidth + static_cast<double>(effectPass.Offset.X));
-                    queuedQuad.Vertices[1].PositionY = static_cast<float>(glyphY + static_cast<double>(effectPass.Offset.Y));
-                    queuedQuad.Vertices[1].TextureU = glyph.SourceRect.X + glyph.SourceRect.Z;
-                    queuedQuad.Vertices[1].TextureV = glyph.SourceRect.Y;
+                    queuedQuad.Vertices[1].PositionX = static_cast<float>(glyphX + glyphWidth + RealEvaluation(effectPass.Offset.X));
+                    queuedQuad.Vertices[1].PositionY = static_cast<float>(glyphY + RealEvaluation(effectPass.Offset.Y));
+                    queuedQuad.Vertices[1].TextureU = static_cast<float>(glyph.SourceRect.X + glyph.SourceRect.Z);
+                    queuedQuad.Vertices[1].TextureV = static_cast<float>(glyph.SourceRect.Y);
                     queuedQuad.Vertices[1].ColorAbgr = packedColor;
 
-                    queuedQuad.Vertices[2].PositionX = static_cast<float>(glyphX + static_cast<double>(effectPass.Offset.X));
-                    queuedQuad.Vertices[2].PositionY = static_cast<float>(glyphY + glyphHeight + static_cast<double>(effectPass.Offset.Y));
-                    queuedQuad.Vertices[2].TextureU = glyph.SourceRect.X;
-                    queuedQuad.Vertices[2].TextureV = glyph.SourceRect.Y + glyph.SourceRect.W;
+                    queuedQuad.Vertices[2].PositionX = static_cast<float>(glyphX + RealEvaluation(effectPass.Offset.X));
+                    queuedQuad.Vertices[2].PositionY = static_cast<float>(glyphY + glyphHeight + RealEvaluation(effectPass.Offset.Y));
+                    queuedQuad.Vertices[2].TextureU = static_cast<float>(glyph.SourceRect.X);
+                    queuedQuad.Vertices[2].TextureV = static_cast<float>(glyph.SourceRect.Y + glyph.SourceRect.W);
                     queuedQuad.Vertices[2].ColorAbgr = packedColor;
 
-                    queuedQuad.Vertices[3].PositionX = static_cast<float>(glyphX + glyphWidth + static_cast<double>(effectPass.Offset.X));
-                    queuedQuad.Vertices[3].PositionY = static_cast<float>(glyphY + glyphHeight + static_cast<double>(effectPass.Offset.Y));
-                    queuedQuad.Vertices[3].TextureU = glyph.SourceRect.X + glyph.SourceRect.Z;
-                    queuedQuad.Vertices[3].TextureV = glyph.SourceRect.Y + glyph.SourceRect.W;
+                    queuedQuad.Vertices[3].PositionX = static_cast<float>(glyphX + glyphWidth + RealEvaluation(effectPass.Offset.X));
+                    queuedQuad.Vertices[3].PositionY = static_cast<float>(glyphY + glyphHeight + RealEvaluation(effectPass.Offset.Y));
+                    queuedQuad.Vertices[3].TextureU = static_cast<float>(glyph.SourceRect.X + glyph.SourceRect.Z);
+                    queuedQuad.Vertices[3].TextureV = static_cast<float>(glyph.SourceRect.Y + glyph.SourceRect.W);
                     queuedQuad.Vertices[3].ColorAbgr = packedColor;
 
                     QueuedQuads.push_back(queuedQuad);
                 }
 
-                double advanceWidth = glyph.AdvanceWidth > 0.0f
-                    ? static_cast<double>(glyph.AdvanceWidth) * fontScale
+                RealEvaluation advanceWidth = glyph.AdvanceWidth > 0.0f
+                    ? glyph.AdvanceWidth * fontScale
                     : glyphWidth;
                 offsetX += advanceWidth;
             }
@@ -522,29 +522,29 @@ namespace helengine::psvita {
 
     /// Appends one queued solid-color triangle to the current frame submission list.
     void PsVitaRenderManager2D::AppendSolidTriangle(
-        float x0,
-        float y0,
-        float x1,
-        float y1,
-        float x2,
-        float y2,
+        RealEvaluation x0,
+        RealEvaluation y0,
+        RealEvaluation x1,
+        RealEvaluation y1,
+        RealEvaluation x2,
+        RealEvaluation y2,
         std::uint32_t colorAbgr,
         std::uint32_t renderOrder) {
         QueuedSolidColorTriangles.push_back(rendering::PsVitaSolidColorVertex {
-            x0,
-            y0,
+            static_cast<float>(x0),
+            static_cast<float>(y0),
             colorAbgr,
             ComposeRenderOrder(ActiveCameraRenderOrder, renderOrder)
         });
         QueuedSolidColorTriangles.push_back(rendering::PsVitaSolidColorVertex {
-            x1,
-            y1,
+            static_cast<float>(x1),
+            static_cast<float>(y1),
             colorAbgr,
             ComposeRenderOrder(ActiveCameraRenderOrder, renderOrder)
         });
         QueuedSolidColorTriangles.push_back(rendering::PsVitaSolidColorVertex {
-            x2,
-            y2,
+            static_cast<float>(x2),
+            static_cast<float>(y2),
             colorAbgr,
             ComposeRenderOrder(ActiveCameraRenderOrder, renderOrder)
         });
@@ -552,10 +552,10 @@ namespace helengine::psvita {
 
     /// Appends one queued solid-color quad as two triangles to the current frame submission list.
     void PsVitaRenderManager2D::AppendSolidQuad(
-        float left,
-        float top,
-        float right,
-        float bottom,
+        RealEvaluation left,
+        RealEvaluation top,
+        RealEvaluation right,
+        RealEvaluation bottom,
         std::uint32_t colorAbgr,
         std::uint32_t renderOrder) {
         if (right <= left || bottom <= top) {
@@ -570,28 +570,28 @@ namespace helengine::psvita {
     void PsVitaRenderManager2D::AppendFilledRoundedRect(
         const float3& position,
         const ::int2& size,
-        double radius,
+        RealEvaluation radius,
         std::uint32_t colorAbgr,
         std::uint32_t renderOrder) {
         if (size.X <= 0 || size.Y <= 0) {
             return;
         }
 
-        float left = position.X;
-        float top = position.Y;
-        float right = position.X + static_cast<float>(size.X);
-        float bottom = position.Y + static_cast<float>(size.Y);
-        double clampedRadius = std::max(
-            0.0,
-            std::min(
+        RealEvaluation left = position.X;
+        RealEvaluation top = position.Y;
+        RealEvaluation right = position.X + size.X;
+        RealEvaluation bottom = position.Y + size.Y;
+        RealEvaluation clampedRadius = RealMath::Max(
+            RealEvaluation(0),
+            RealMath::Min(
                 radius,
-                std::min(static_cast<double>(size.X), static_cast<double>(size.Y)) * 0.5));
+                RealEvaluation(RealMath::Min(size.X, size.Y)) / 2));
         if (clampedRadius <= 0.0) {
             AppendSolidQuad(left, top, right, bottom, colorAbgr, renderOrder);
             return;
         }
 
-        float radiusPixels = static_cast<float>(clampedRadius);
+        RealEvaluation radiusPixels = clampedRadius;
         AppendSolidQuad(left + radiusPixels, top, right - radiusPixels, bottom, colorAbgr, renderOrder);
         AppendSolidQuad(left, top + radiusPixels, left + radiusPixels, bottom - radiusPixels, colorAbgr, renderOrder);
         AppendSolidQuad(right - radiusPixels, top + radiusPixels, right, bottom - radiusPixels, colorAbgr, renderOrder);
@@ -632,28 +632,28 @@ namespace helengine::psvita {
 
     /// Appends one rounded-corner triangle fan using the supplied angle range.
     void PsVitaRenderManager2D::AppendRoundedCornerFan(
-        float centerX,
-        float centerY,
-        double radius,
-        double startAngleRadians,
-        double endAngleRadians,
+        RealEvaluation centerX,
+        RealEvaluation centerY,
+        RealEvaluation radius,
+        RealEvaluation startAngleRadians,
+        RealEvaluation endAngleRadians,
         std::uint32_t colorAbgr,
         std::uint32_t renderOrder) {
         if (radius <= 0.0) {
             return;
         }
 
-        double angleStep = (endAngleRadians - startAngleRadians) / static_cast<double>(RoundedCornerSegmentCount);
+        RealEvaluation angleStep = (endAngleRadians - startAngleRadians) / RoundedCornerSegmentCount;
         for (int segmentIndex = 0; segmentIndex < RoundedCornerSegmentCount; ++segmentIndex) {
-            double angle0 = startAngleRadians + (angleStep * static_cast<double>(segmentIndex));
-            double angle1 = startAngleRadians + (angleStep * static_cast<double>(segmentIndex + 1));
+            RealEvaluation angle0 = startAngleRadians + (angleStep * segmentIndex);
+            RealEvaluation angle1 = startAngleRadians + (angleStep * (segmentIndex + 1));
             AppendSolidTriangle(
                 centerX,
                 centerY,
-                static_cast<float>(centerX + (std::cos(angle0) * radius)),
-                static_cast<float>(centerY + (std::sin(angle0) * radius)),
-                static_cast<float>(centerX + (std::cos(angle1) * radius)),
-                static_cast<float>(centerY + (std::sin(angle1) * radius)),
+                centerX + (RealMath::Cos(angle0) * radius),
+                centerY + (RealMath::Sin(angle0) * radius),
+                centerX + (RealMath::Cos(angle1) * radius),
+                centerY + (RealMath::Sin(angle1) * radius),
                 colorAbgr,
                 renderOrder);
         }

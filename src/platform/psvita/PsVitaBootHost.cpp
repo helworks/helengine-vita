@@ -30,6 +30,7 @@
 #include "StandardPlatformActionBinding.hpp"
 #include "StandardPlatformInputConfiguration.hpp"
 #include "runtime/native_exceptions.hpp"
+#include "runtime/native_real.hpp"
 #include "platform/psvita/audio/PsVitaAudioBackend.hpp"
 #include "platform/psvita/PsVitaInputBackend.hpp"
 #include "platform/psvita/PsVitaRuntimeSceneCatalogFactory.hpp"
@@ -367,10 +368,10 @@ namespace helengine::psvita {
             }
 
             float4 clearColor = clearSettings.get_ClearColor();
-            std::uint32_t red = static_cast<std::uint32_t>(std::lround(std::clamp(clearColor.X, 0.0f, 1.0f) * 255.0f));
-            std::uint32_t green = static_cast<std::uint32_t>(std::lround(std::clamp(clearColor.Y, 0.0f, 1.0f) * 255.0f));
-            std::uint32_t blue = static_cast<std::uint32_t>(std::lround(std::clamp(clearColor.Z, 0.0f, 1.0f) * 255.0f));
-            std::uint32_t alpha = static_cast<std::uint32_t>(std::lround(std::clamp(clearColor.W, 0.0f, 1.0f) * 255.0f));
+            std::uint32_t red = static_cast<std::uint32_t>(static_cast<int32_t>(RealMath::Round(RealMath::Clamp(clearColor.X, 0, 1) * 255, MidpointRounding::AwayFromZero)));
+            std::uint32_t green = static_cast<std::uint32_t>(static_cast<int32_t>(RealMath::Round(RealMath::Clamp(clearColor.Y, 0, 1) * 255, MidpointRounding::AwayFromZero)));
+            std::uint32_t blue = static_cast<std::uint32_t>(static_cast<int32_t>(RealMath::Round(RealMath::Clamp(clearColor.Z, 0, 1) * 255, MidpointRounding::AwayFromZero)));
+            std::uint32_t alpha = static_cast<std::uint32_t>(static_cast<int32_t>(RealMath::Round(RealMath::Clamp(clearColor.W, 0, 1) * 255, MidpointRounding::AwayFromZero)));
             return (alpha << 24)
                 | (blue << 16)
                 | (green << 8)

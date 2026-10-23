@@ -13,6 +13,7 @@
 #include "AudioAsset.hpp"
 #include "AudioPlaybackRequest.hpp"
 #include "IAudioBackend.hpp"
+#include "runtime/native_real.hpp"
 
 namespace helengine::psvita {
     /// <summary>
@@ -34,9 +35,9 @@ namespace helengine::psvita {
 
         void Stop(int32_t voiceId) override;
 
-        void SetBusGain(std::string busId, float gain) override;
+        void SetBusGain(HeCppString busId, float gain) override;
 
-        void SetBusPaused(std::string busId, bool paused) override;
+        void SetBusPaused(HeCppString busId, bool paused) override;
 
         bool IsPlaying(int32_t voiceId) override;
 
@@ -58,7 +59,7 @@ namespace helengine::psvita {
             int32_t SourceSampleRate;
             int32_t SourceChannelCount;
             std::string BusId;
-            float BaseGain;
+            Real BaseGain;
             bool Loop;
             bool Playing;
             std::uint64_t SourceCursorQ16;
@@ -70,17 +71,17 @@ namespace helengine::psvita {
 
         int FillOutputBufferLocked();
 
-        float ResolveCombinedGainLocked(const std::string& busId, float baseGain) const;
+        RealEvaluation ResolveCombinedGainLocked(const std::string& busId, Real baseGain) const;
 
         bool IsBusPausedLocked(const std::string& busId) const;
 
-        static std::string NormalizeBusId(std::string busId);
+        static std::string NormalizeBusId(HeCppString busId);
 
-        static float ClampGain(float gain);
+        static RealEvaluation ClampGain(RealEvaluation gain);
 
-        static int ConvertGainToVolume(float gain);
+        static int ConvertGainToVolume(RealEvaluation gain);
 
-        static bool UsesPcmEncoding(const std::string& encodingFamilyId);
+        static bool UsesPcmEncoding(const HeCppString& encodingFamilyId);
 
         static void ResetAudioTrace();
 
@@ -94,7 +95,7 @@ namespace helengine::psvita {
         bool HasActiveVoice;
         bool HasLoggedActiveMix;
         ActiveVoiceState ActiveVoice;
-        std::unordered_map<std::string, float> BusGainsById;
+        std::unordered_map<std::string, Real> BusGainsById;
         std::unordered_set<std::string> PausedBusIds;
         std::array<std::int16_t, BufferFrameCount * OutputChannelCount> OutputBuffer;
         mutable std::mutex StateMutex;

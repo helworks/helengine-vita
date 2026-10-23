@@ -116,7 +116,7 @@ namespace helengine::psvita {
             + " frameCount=" + std::to_string(voice.SourceFrameCount)
             + " loop=" + (voice.Loop ? "true" : "false")
             + " bus=" + voice.BusId
-            + " gain=" + std::to_string(voice.BaseGain));
+            + " gain=" + std::to_string(static_cast<double>(voice.BaseGain)));
         return voice.VoiceId;
     }
 
@@ -132,12 +132,12 @@ namespace helengine::psvita {
         HasLoggedActiveMix = false;
     }
 
-    void PsVitaAudioBackend::SetBusGain(std::string busId, float gain) {
+    void PsVitaAudioBackend::SetBusGain(HeCppString busId, float gain) {
         std::lock_guard<std::mutex> lock(StateMutex);
         BusGainsById[NormalizeBusId(std::move(busId))] = ClampGain(gain);
     }
 
-    void PsVitaAudioBackend::SetBusPaused(std::string busId, bool paused) {
+    void PsVitaAudioBackend::SetBusPaused(HeCppString busId, bool paused) {
         std::lock_guard<std::mutex> lock(StateMutex);
         std::string normalizedBusId = NormalizeBusId(std::move(busId));
         if (paused) {
@@ -196,7 +196,7 @@ namespace helengine::psvita {
             return 0;
         }
 
-        float combinedGain = ResolveCombinedGainLocked(ActiveVoice.BusId, ActiveVoice.BaseGain);
+        RealEvaluation combinedGain = ResolveCombinedGainLocked(ActiveVoice.BusId, ActiveVoice.BaseGain);
         if (combinedGain <= 0.0f) {
             return 0;
         }
@@ -204,7 +204,7 @@ namespace helengine::psvita {
         if (!HasLoggedActiveMix) {
             AppendAudioTrace(
                 std::string("mix voiceId=") + std::to_string(ActiveVoice.VoiceId)
-                + " combinedGain=" + std::to_string(combinedGain)
+                + " combinedGain=" + std::to_string(static_cast<double>(combinedGain))
                 + " sourceFrames=" + std::to_string(ActiveVoice.SourceFrameCount)
                 + " sourceRate=" + std::to_string(ActiveVoice.SourceSampleRate)
                 + " sourceChannels=" + std::to_string(ActiveVoice.SourceChannelCount));
@@ -247,14 +247,14 @@ namespace helengine::psvita {
         return ConvertGainToVolume(combinedGain);
     }
 
-    float PsVitaAudioBackend::ResolveCombinedGainLocked(const std::string& busId, float baseGain) const {
-        float masterGain = 1.0f;
+    RealEvaluation PsVitaAudioBackend::ResolveCombinedGainLocked(const std::string& busId, Real baseGain) const {
+        RealEvaluation masterGain = 1;
         auto masterGainIterator = BusGainsById.find("master");
         if (masterGainIterator != BusGainsById.end()) {
             masterGain = masterGainIterator->second;
         }
 
-        float busGain = 1.0f;
+        RealEvaluation busGain = 1;
         auto busGainIterator = BusGainsById.find(busId);
         if (busGainIterator != BusGainsById.end()) {
             busGain = busGainIterator->second;
@@ -267,34 +267,35 @@ namespace helengine::psvita {
         return PausedBusIds.contains("master") || PausedBusIds.contains(busId);
     }
 
-    std::string PsVitaAudioBackend::NormalizeBusId(std::string busId) {
+    std::string PsVitaAudioBackend::NormalizeBusId(HeCppString busId) {
         if (busId.empty()) {
             return "master";
         }
 
+        std::string normalizedBusId = busId.raw();
         std::transform(
-            busId.begin(),
-            busId.end(),
-            busId.begin(),
+            normalizedBusId.begin(),
+            normalizedBusId.end(),
+            normalizedBusId.begin(),
             [](unsigned char value) {
                 return static_cast<char>(std::tolower(value));
             });
-        return busId;
+        return normalizedBusId;
     }
 
-    float PsVitaAudioBackend::ClampGain(float gain) {
+    RealEvaluation PsVitaAudioBackend::ClampGain(RealEvaluation gain) {
         if (!(gain >= 0.0f) || gain != gain) {
             return 0.0f;
         }
 
-        return std::clamp(gain, 0.0f, 1.0f);
+        return RealMath::Clamp(gain, 0, 1);
     }
 
-    int PsVitaAudioBackend::ConvertGainToVolume(float gain) {
-        return static_cast<int>(std::clamp(gain, 0.0f, 1.0f) * HardwareMaxVolume);
+    int PsVitaAudioBackend::ConvertGainToVolume(RealEvaluation gain) {
+        return static_cast<int>(RealMath::Clamp(gain, 0, 1) * HardwareMaxVolume);
     }
 
-    bool PsVitaAudioBackend::UsesPcmEncoding(const std::string& encodingFamilyId) {
+    bool PsVitaAudioBackend::UsesPcmEncoding(const HeCppString& encodingFamilyId) {
         return encodingFamilyId == "pcm-streamed" || encodingFamilyId == "pcm-buffered";
     }
 

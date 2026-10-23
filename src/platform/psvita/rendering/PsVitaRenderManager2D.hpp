@@ -18,13 +18,14 @@ class IDrawable2D;
 #include "byte4.hpp"
 #include "float3.hpp"
 #include "int2.hpp"
+#include "runtime/native_real.hpp"
 
 namespace helengine::psvita {
     /// Provides the temporary PS Vita 2D renderer bridge so the runtime can initialize before native rendering is implemented.
     class PsVitaRenderManager2D final : public ::RenderManager2D, public ::IRenderVisitor2D {
     public:
         /// Builds a runtime texture from one packaged cooked texture asset.
-        ::RuntimeTexture* BuildTextureFromCooked(std::string cookedAssetPath, IContentStreamSource* contentStreamSource) override;
+        ::RuntimeTexture* BuildTextureFromCooked(HeCppString cookedAssetPath, IContentStreamSource* contentStreamSource) override;
 
         /// Builds a runtime texture from raw data.
         ::RuntimeTexture* BuildTextureFromRaw(::TextureAsset* data) override;
@@ -69,21 +70,21 @@ namespace helengine::psvita {
 
         /// Appends one queued solid-color triangle to the current frame submission list.
         void AppendSolidTriangle(
-            float x0,
-            float y0,
-            float x1,
-            float y1,
-            float x2,
-            float y2,
+            RealEvaluation x0,
+            RealEvaluation y0,
+            RealEvaluation x1,
+            RealEvaluation y1,
+            RealEvaluation x2,
+            RealEvaluation y2,
             std::uint32_t colorAbgr,
             std::uint32_t renderOrder);
 
         /// Appends one queued solid-color quad as two triangles to the current frame submission list.
         void AppendSolidQuad(
-            float left,
-            float top,
-            float right,
-            float bottom,
+            RealEvaluation left,
+            RealEvaluation top,
+            RealEvaluation right,
+            RealEvaluation bottom,
             std::uint32_t colorAbgr,
             std::uint32_t renderOrder);
 
@@ -91,17 +92,17 @@ namespace helengine::psvita {
         void AppendFilledRoundedRect(
             const float3& position,
             const ::int2& size,
-            double radius,
+            RealEvaluation radius,
             std::uint32_t colorAbgr,
             std::uint32_t renderOrder);
 
         /// Appends one rounded-corner triangle fan using the supplied angle range.
         void AppendRoundedCornerFan(
-            float centerX,
-            float centerY,
-            double radius,
-            double startAngleRadians,
-            double endAngleRadians,
+            RealEvaluation centerX,
+            RealEvaluation centerY,
+            RealEvaluation radius,
+            RealEvaluation startAngleRadians,
+            RealEvaluation endAngleRadians,
             std::uint32_t colorAbgr,
             std::uint32_t renderOrder);
 
