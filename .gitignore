@@ -11,7 +11,8 @@ tmp/
 artifacts/
 diagnostics/
 verification/
-sce_sys/
+/sce_sys/*
+!/sce_sys/icon0-indexed.png
 *.pvsa
 *.psvb
 *.psp2dmp.tmp
